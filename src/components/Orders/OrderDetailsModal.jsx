@@ -1,7 +1,7 @@
 import React from 'react';
-import { X, CakeSlice, User, MapPin, Phone } from 'lucide-react';
+import { X, CakeSlice, User, MapPin, Phone, Edit2, Trash2 } from 'lucide-react';
 
-const OrderDetailsModal = ({ isOpen, onClose, order }) => {
+const OrderDetailsModal = ({ isOpen, onClose, order, onEdit, onDelete }) => {
     if (!isOpen || !order) return null;
 
     return (
@@ -66,12 +66,44 @@ const OrderDetailsModal = ({ isOpen, onClose, order }) => {
                             </div>
                         ))}
                     </div>
+
+                    {/* Payment Details */}
+                    <div className="mt-6 pt-4 border-t border-gray-100 space-y-2">
+                        <div className="flex justify-between text-sm">
+                            <span className="text-gray-500">Shipping Fee</span>
+                            <span className="font-medium text-gray-900">
+                                {new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(order.originalData?.shipFee || 0)}
+                            </span>
+                        </div>
+                        <div className="flex justify-between text-sm">
+                            <span className="text-gray-500">Discount</span>
+                            <span className="font-medium text-red-500">
+                                -{new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(order.originalData?.discount || 0)}
+                            </span>
+                        </div>
+                    </div>
                 </div>
 
                 {/* Footer */}
-                <div className="px-6 py-4 border-t border-gray-100 bg-gray-50/50 flex justify-between items-center">
-                    <span className="text-gray-500 font-medium">Total Amount</span>
-                    <span className="text-xl font-bold text-primary">{order.price}</span>
+                <div className="px-6 py-4 border-t border-gray-100 bg-gray-50/50">
+                    <div className="flex justify-between items-center mb-4">
+                        <span className="text-gray-500 font-medium">Total Amount</span>
+                        <span className="text-xl font-bold text-primary">{order.price}</span>
+                    </div>
+                    <div className="flex gap-3">
+                        <button 
+                            onClick={onEdit} 
+                            className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-white border border-gray-200 text-gray-700 font-medium hover:bg-gray-50 transition-colors"
+                        >
+                            <Edit2 size={18} /> Edit
+                        </button>
+                        <button 
+                            onClick={onDelete} 
+                            className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-red-50 border border-red-100 text-red-600 font-medium hover:bg-red-100 transition-colors"
+                        >
+                            <Trash2 size={18} /> Delete
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>

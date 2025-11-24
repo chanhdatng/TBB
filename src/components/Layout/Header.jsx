@@ -13,7 +13,7 @@ const Header = ({ onMenuClick }) => {
                 </button>
 
                 <div className="hidden md:flex items-center text-sm text-gray-500">
-                    <span className="hover:text-gray-900 cursor-pointer">BakeryAdmin</span>
+                    <span className="hover:text-gray-900 cursor-pointer">TheButterBake</span>
                     <span className="mx-2">/</span>
                     <span className="text-gray-900 font-medium">Dashboard</span>
                 </div>

@@ -3,6 +3,7 @@ import { Search, Filter, Plus, MoreHorizontal, ArrowUpDown, ArrowUp, ArrowDown, 
 import CreateOrderModal from '../components/Orders/CreateOrderModal';
 import DateSelector from '../components/Orders/DateSelector';
 import AdvancedFilterModal from '../components/Orders/AdvancedFilterModal';
+import ShiftSummaryCards from '../components/Orders/ShiftSummaryCards';
 import OrderDetailsModal from '../components/Orders/OrderDetailsModal';
 import { database } from '../firebase';
 import { ref, set, update, remove } from "firebase/database";
@@ -41,16 +42,23 @@ const Orders = () => {
     });
     const [sortConfig, setSortConfig] = useState({ key: 'receiveDate', direction: 'asc' });
     const [searchQuery, setSearchQuery] = useState('');
+    const [activeStatusId, setActiveStatusId] = useState(null);
+    const [editingOrder, setEditingOrder] = useState(null);
 
     const handleCreateOrder = (newOrder) => {
         set(ref(database, 'orders/' + newOrder.id), newOrder);
     };
 
-    const handleStatusChange = (id, currentStatus) => {
-        const newStatus = currentStatus === 'Pending' ? 'Completed' : 'Pending';
+    const handleUpdateOrder = (updatedOrder) => {
+        update(ref(database, 'orders/' + updatedOrder.id), updatedOrder);
+        setEditingOrder(null);
+    };
+
+    const handleStatusChange = (id, newStatus) => {
         update(ref(database, 'orders/' + id), {
-            status: newStatus
+            state: newStatus
         });
+        setActiveStatusId(null);
     };
 
     const handleDeleteOrder = (id) => {
@@ -60,7 +68,11 @@ const Orders = () => {
     };
 
     const handleEditOrder = (id) => {
-        console.log('Edit order:', id);
+        const orderToEdit = orders.find(o => o.id === id);
+        if (orderToEdit) {
+            setEditingOrder(orderToEdit);
+            setIsModalOpen(true);
+        }
     };
 
     const handleOpenDetails = (order) => {
@@ -127,7 +139,22 @@ const Orders = () => {
 
         // 3. Advanced Filters
         if (advancedFilters.status.length > 0) {
-            result = result.filter(order => advancedFilters.status.includes(order.status));
+            result = result.filter(order => {
+                const stateLower = (order.originalData?.state || '').toLowerCase();
+                return advancedFilters.status.some(status => {
+                    if (status === 'Pending') return stateLower.includes('đặt trước');
+                    if (status === 'Completed') return stateLower.includes('hoàn thành');
+                    if (status === 'Cancelled') return stateLower.includes('hủy') || stateLower.includes('huỷ');
+                    return false;
+                });
+            });
+        }
+
+        if (advancedFilters.isPickupOnly) {
+            result = result.filter(order => {
+                const address = (order.customer.address || '').toLowerCase();
+                return address.includes('pickup') || address.includes('bookship');
+            });
         }
 
         if (advancedFilters.cakeTypes.length > 0) {
@@ -189,7 +216,10 @@ const Orders = () => {
                         )}
                     </button>
                     <button
-                        onClick={() => setIsModalOpen(true)}
+                        onClick={() => {
+                            setEditingOrder(null);
+                            setIsModalOpen(true);
+                        }}
                         className="flex items-center gap-2 bg-primary hover:bg-primary-light text-white px-4 py-2 rounded-lg font-medium transition-colors"
                     >
                         <Plus size={20} />
@@ -206,10 +236,17 @@ const Orders = () => {
                 />
             </div>
 
+            <ShiftSummaryCards orders={filteredAndSortedOrders} />
+
             <CreateOrderModal
                 isOpen={isModalOpen}
-                onClose={() => setIsModalOpen(false)}
+                onClose={() => {
+                    setIsModalOpen(false);
+                    setEditingOrder(null);
+                }}
                 onCreateOrder={handleCreateOrder}
+                editingOrder={editingOrder}
+                onUpdateOrder={handleUpdateOrder}
             />
 
             <AdvancedFilterModal
@@ -231,9 +268,17 @@ const Orders = () => {
                 isOpen={isDetailsModalOpen}
                 onClose={() => setIsDetailsModalOpen(false)}
                 order={selectedOrderForDetails}
+                onEdit={() => {
+                    handleEditOrder(selectedOrderForDetails.id);
+                    setIsDetailsModalOpen(false);
+                }}
+                onDelete={() => {
+                    handleDeleteOrder(selectedOrderForDetails.id);
+                    setIsDetailsModalOpen(false);
+                }}
             />
 
-            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm">
                 <div className="p-4 border-b border-gray-100 flex flex-col sm:flex-row gap-4 justify-between items-center">
                     <div className="relative flex-1 max-w-md w-full">
                         <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
@@ -246,6 +291,21 @@ const Orders = () => {
                         />
                     </div>
                     <div className="flex items-center gap-3">
+                        <label className="flex items-center gap-2 cursor-pointer mr-4">
+                            <div className={`w-4 h-4 rounded border flex items-center justify-center transition-colors ${
+                                advancedFilters.isPickupOnly ? 'bg-primary border-primary' : 'border-gray-300'
+                            }`}>
+                                {advancedFilters.isPickupOnly && <CheckCircle2 size={12} className="text-white" />}
+                            </div>
+                            <input
+                                type="checkbox"
+                                className="hidden"
+                                checked={advancedFilters.isPickupOnly || false}
+                                onChange={(e) => setAdvancedFilters(prev => ({ ...prev, isPickupOnly: e.target.checked }))}
+                            />
+                            <span className="text-sm text-gray-600 font-medium">Pickup Only</span>
+                        </label>
+                        <div className="h-4 w-px bg-gray-200 mr-4"></div>
                         <span className="text-sm text-gray-500">Sort by:</span>
                         <div className="flex bg-gray-50 rounded-lg p-1 border border-gray-200">
                             <button
@@ -285,12 +345,11 @@ const Orders = () => {
                                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-[90px]">Time</th>
                                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-[110px]">Total</th>
                                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-[90px]">Status</th>
-                                <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider w-[80px]">Actions</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-100">
                             {filteredAndSortedOrders.length > 0 ? (
-                                filteredAndSortedOrders.map((order) => (
+                                filteredAndSortedOrders.map((order, index) => (
                                     <tr
                                         key={order.id}
                                         onClick={() => handleOpenDetails(order)}
@@ -358,57 +417,76 @@ const Orders = () => {
 
                                         {/* Status */}
                                         <td className="px-4 py-4 whitespace-nowrap">
-                                            <button
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    handleStatusChange(order.id, order.status);
-                                                }}
-                                                className={`
-                                                    inline-flex items-center justify-center w-8 h-8 rounded-full transition-colors
-                                                    ${order.status === 'Completed' ? 'bg-green-100 text-green-600 hover:bg-green-200' :
-                                                        order.status === 'Pending' ? 'bg-yellow-100 text-yellow-600 hover:bg-yellow-200' :
-                                                            'bg-red-100 text-red-600 hover:bg-red-200'
+                                            <div className="relative">
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        if (order.status === 'Pending') {
+                                                            setActiveStatusId(activeStatusId === order.id ? null : order.id);
+                                                        } else {
+                                                            // Allow toggling back to Pending if needed, or just do nothing
+                                                            // For now, let's allow toggling back to Pending for easy correction
+                                                            handleStatusChange(order.id, 'Pending');
+                                                        }
+                                                    }}
+                                                    className={`
+                                                        inline-flex items-center justify-center w-8 h-8 rounded-full transition-colors
+                                                        ${order.status === 'Completed' ? 'bg-green-100 text-green-600 hover:bg-green-200' :
+                                                            order.status === 'Pending' ? 'bg-yellow-100 text-yellow-600 hover:bg-yellow-200' :
+                                                                'bg-red-100 text-red-600 hover:bg-red-200'
+                                                        }
+                                                    `}
+                                                    title={`Status: ${order.status}`}
+                                                >
+                                                    {order.status === 'Completed' ? <CheckCircle size={18} /> :
+                                                        order.status === 'Pending' ? <Clock size={18} /> :
+                                                            <XCircle size={18} />
                                                     }
-                                                `}
-                                                title={`Status: ${order.status}`}
-                                            >
-                                                {order.status === 'Completed' ? <CheckCircle size={18} /> :
-                                                    order.status === 'Pending' ? <Clock size={18} /> :
-                                                        <XCircle size={18} />
-                                                }
-                                            </button>
-                                        </td>
-
-                                        {/* Actions */}
-                                        <td className="px-4 py-4 whitespace-nowrap text-right text-sm font-medium">
-                                            <div className="flex items-center justify-end gap-2">
-                                                <button
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        handleEditOrder(order.id);
-                                                    }}
-                                                    className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-full transition-colors"
-                                                    title="Edit Order"
-                                                >
-                                                    <Edit2 size={16} />
                                                 </button>
-                                                <button
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        handleDeleteOrder(order.id);
-                                                    }}
-                                                    className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-full transition-colors"
-                                                    title="Delete Order"
-                                                >
-                                                    <Trash2 size={16} />
-                                                </button>
+                                                
+                                                {/* Status Dropdown for Pending */}
+                                                {activeStatusId === order.id && (
+                                                    <>
+                                                        <div 
+                                                            className="fixed inset-0 z-10" 
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                setActiveStatusId(null);
+                                                            }}
+                                                        ></div>
+                                                        <div className={`absolute right-0 w-40 bg-white rounded-lg shadow-xl border border-gray-100 z-20 overflow-hidden animate-in fade-in zoom-in-95 duration-200 ${
+                                                            index === filteredAndSortedOrders.length - 1 ? 'bottom-full mb-2' : 'top-full mt-2'
+                                                        }`}>
+                                                            <button
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    handleStatusChange(order.id, 'Hoàn Thành');
+                                                                }}
+                                                                className="w-full px-4 py-2 text-left text-sm hover:bg-green-50 text-gray-700 hover:text-green-700 flex items-center gap-2"
+                                                            >
+                                                                <CheckCircle size={16} className="text-green-500" />
+                                                                Hoàn thành
+                                                            </button>
+                                                            <button
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    handleStatusChange(order.id, 'Cancelled');
+                                                                }}
+                                                                className="w-full px-4 py-2 text-left text-sm hover:bg-red-50 text-gray-700 hover:text-red-700 flex items-center gap-2"
+                                                            >
+                                                                <XCircle size={16} className="text-red-500" />
+                                                                Đã hủy
+                                                            </button>
+                                                        </div>
+                                                    </>
+                                                )}
                                             </div>
                                         </td>
                                     </tr>
                                 ))
                             ) : (
                                 <tr>
-                                    <td colSpan="6" className="px-6 py-12 text-center text-gray-500">
+                                    <td colSpan="5" className="px-6 py-12 text-center text-gray-500">
                                         <div className="flex flex-col items-center justify-center">
                                             <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mb-4">
                                                 <Search size={24} className="text-gray-400" />
@@ -421,6 +499,18 @@ const Orders = () => {
                             )}
                         </tbody>
                     </table>
+                </div>
+
+                
+                {/* Daily Summary Footer */}
+                <div className="bg-gray-50 border-t border-gray-200 px-6 py-3 flex justify-between items-center text-xs text-gray-500">
+                    <div className="flex gap-4">
+                        <span>Total Orders: <span className="font-medium text-gray-900">{filteredAndSortedOrders.length}</span></span>
+                        <span>Total Items: <span className="font-medium text-gray-900">{filteredAndSortedOrders.reduce((sum, order) => sum + order.items.reduce((is, i) => is + (Number(i.amount) || 0), 0), 0)}</span></span>
+                    </div>
+                    <div>
+                        Total Revenue: <span className="font-medium text-gray-900">{new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(filteredAndSortedOrders.reduce((sum, order) => sum + (order.rawPrice || 0), 0))}</span>
+                    </div>
                 </div>
             </div>
         </div>

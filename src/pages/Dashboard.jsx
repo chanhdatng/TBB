@@ -28,7 +28,9 @@ const Dashboard = () => {
                 break;
             case 'week':
                 start = new Date(now);
-                start.setDate(now.getDate() - now.getDay()); // Start of week (Sunday)
+                const day = start.getDay();
+                const diff = start.getDate() - day + (day === 0 ? -6 : 1); // Start of week (Monday)
+                start.setDate(diff);
                 start.setHours(0, 0, 0, 0);
                 end = new Date(start);
                 end.setDate(end.getDate() + 7);
@@ -204,7 +206,11 @@ const Dashboard = () => {
 
         // Filter orders for chart based on chartTimeRange
         const now = new Date();
-        const startOfWeek = new Date(now.setDate(now.getDate() - now.getDay()));
+        const startOfWeek = new Date(now);
+        const day = startOfWeek.getDay();
+        const diff = startOfWeek.getDate() - day + (day === 0 ? -6 : 1); // Start of week (Monday)
+        startOfWeek.setDate(diff);
+        startOfWeek.setHours(0, 0, 0, 0);
         const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
         const startOfYear = new Date(now.getFullYear(), 0, 1);
 
@@ -297,7 +303,7 @@ const Dashboard = () => {
             />
 
             {/* Page Header */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-8 gap-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-6 gap-4">
                 <div>
                     <h1 className="text-2xl font-bold text-gray-900">Overview</h1>
                     <p className="text-gray-500 mt-1">Here is the summary of overall data</p>
@@ -319,16 +325,16 @@ const Dashboard = () => {
             </div>
 
             {/* Stats Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
                 {/* Total Revenue */}
-                <div className="bg-primary rounded-2xl p-6 text-white shadow-lg shadow-primary/20 relative overflow-hidden group">
+                <div className="bg-primary rounded-2xl p-4 text-white shadow-lg shadow-primary/20 relative overflow-hidden group">
                     <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
                         <Wallet size={120} />
                     </div>
                     <div className="relative z-10">
-                        <div className="flex justify-between items-start mb-6">
-                            <div className="p-3 bg-white/20 rounded-xl backdrop-blur-sm">
-                                <Wallet size={24} />
+                        <div className="flex justify-between items-start mb-4">
+                            <div className="p-2 bg-white/20 rounded-xl backdrop-blur-sm">
+                                <Wallet size={20} />
                             </div>
                             <div className="flex gap-2">
                                 <button
@@ -343,7 +349,7 @@ const Dashboard = () => {
                             </div>
                         </div>
                         <p className="text-primary-100 text-sm font-medium mb-1">Total Revenue</p>
-                        <h3 className="text-3xl font-bold mb-4">
+                        <h3 className="text-xl lg:text-3xl font-bold mb-2">
                             {isRevenueVisible
                                 ? new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(stats.totalRevenue)
                                 : '******'}
@@ -410,7 +416,7 @@ const Dashboard = () => {
             </div>
 
             {/* Order Status Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
                 <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm flex items-center justify-between">
                     <div>
                         <p className="text-sm font-medium text-gray-500 mb-1">Pending</p>
@@ -441,7 +447,7 @@ const Dashboard = () => {
             </div>
 
             {/* Charts & Widgets Section */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-8">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
                 {/* Main Chart */}
                 <div className="lg:col-span-2">
                     <RevenueChart

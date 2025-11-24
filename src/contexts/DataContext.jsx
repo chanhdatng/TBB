@@ -10,6 +10,7 @@ export const DataProvider = ({ children }) => {
     const [orders, setOrders] = useState([]);
     const [preOrders, setPreOrders] = useState([]);
     const [customers, setCustomers] = useState([]);
+    const [products, setProducts] = useState([]);
     const [loading, setLoading] = useState(true);
 
     // Helper to format date as YYYY-MM-DD in local time
@@ -59,11 +60,11 @@ export const DataProvider = ({ children }) => {
                     // Calculate Price
                     let total = 0;
                     if (orderData.cakes) {
-                        total += orderData.cakes.reduce((sum, cake) => sum + (cake.price * cake.amount), 0);
+                        total += orderData.cakes.reduce((sum, cake) => sum + (Number(cake.price || 0) * Number(cake.amount || 0)), 0);
                     }
-                    total += (orderData.shipFee || 0);
-                    total += (orderData.otherFee || 0);
-                    total -= (orderData.discount || 0);
+                    total += Number(orderData.shipFee || 0);
+                    total += Number(orderData.otherFee || 0);
+                    total -= Number(orderData.discount || 0);
 
                     // Map Status (Loose matching)
                     let status = 'Pending';
@@ -112,12 +113,12 @@ export const DataProvider = ({ children }) => {
                     }
 
                     // Calculate total if not present
-                    let total = orderData.total;
+                    let total = Number(orderData.total || 0);
                     if (!total && items.length > 0) {
-                        const subtotal = items.reduce((sum, item) => sum + (Number(item.price) * Number(item.amount)), 0);
-                        const shipFee = Number(orderData.shipFee) || 0;
-                        const otherFee = Number(orderData.otherFee) || 0;
-                        const discount = Number(orderData.discount) || 0;
+                        const subtotal = items.reduce((sum, item) => sum + (Number(item.price || 0) * Number(item.amount || 0)), 0);
+                        const shipFee = Number(orderData.shipFee || 0);
+                        const otherFee = Number(orderData.otherFee || 0);
+                        const discount = Number(orderData.discount || 0);
                         total = subtotal + shipFee + otherFee - discount;
                     }
 
@@ -187,17 +188,38 @@ export const DataProvider = ({ children }) => {
             }
         });
 
+        // Fetch Products
+        const productsRef = ref(database, 'cakes');
+        let productsUnsubscribe;
+        productsUnsubscribe = onValue(productsRef, (snapshot) => {
+            const data = snapshot.val();
+            if (data) {
+                // If products is an array or object
+                const productsList = Object.keys(data).map(key => {
+                    const product = data[key];
+                    return {
+                        id: key,
+                        ...product
+                    };
+                });
+                setProducts(productsList);
+            } else {
+                setProducts([]);
+            }
+        });
+
         setLoading(false);
 
         return () => {
             if (ordersUnsubscribe) ordersUnsubscribe();
             if (preOrdersUnsubscribe) preOrdersUnsubscribe();
             if (customersUnsubscribe) customersUnsubscribe();
+            if (productsUnsubscribe) productsUnsubscribe();
         };
     }, []);
 
     return (
-        <DataContext.Provider value={{ orders, preOrders, customers, loading }}>
+        <DataContext.Provider value={{ orders, preOrders, customers, products, loading }}>
             {children}
         </DataContext.Provider>
     );

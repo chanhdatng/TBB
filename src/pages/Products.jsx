@@ -6,6 +6,7 @@ import { ref, onValue } from "firebase/database";
 const Products = () => {
     const [products, setProducts] = useState([]);
     const [filter, setFilter] = useState('All');
+    const [categories, setCategories] = useState(['All']);
 
     useEffect(() => {
         const productsRef = ref(database, 'cakes');
@@ -17,8 +18,13 @@ const Products = () => {
                     ...data[key]
                 }));
                 setProducts(productsList);
+
+                // Extract unique categories
+                const uniqueCategories = ['All', ...new Set(productsList.map(p => p.type).filter(Boolean))];
+                setCategories(uniqueCategories);
             } else {
                 setProducts([]);
+                setCategories(['All']);
             }
         });
 
@@ -27,7 +33,28 @@ const Products = () => {
 
     const filteredProducts = filter === 'All'
         ? products
-        : products.filter(product => product.category === filter);
+        : products.filter(product => product.type === filter);
+
+    // Group products by type for the grid view
+    const productsByType = filter === 'All' 
+        ? categories.filter(c => c !== 'All').reduce((acc, category) => {
+            acc[category] = products.filter(p => p.type === category);
+            return acc;
+        }, {})
+        : { [filter]: filteredProducts };
+
+    const getPlaceholderImage = (type) => {
+        const lowerType = (type || '').toLowerCase();
+        if (lowerType.includes('canele') || lowerType.includes('canelé')) return '/assets/icons/canele.png';
+        if (lowerType.includes('cake') || lowerType.includes('bánh kem') || lowerType.includes('sinh nhật')) return '/assets/icons/cake.png';
+        if (lowerType.includes('brownie') || lowerType.includes('socola')) return '/assets/icons/brownie.png';
+        if (lowerType.includes('banana') || lowerType.includes('chuối')) return '/assets/icons/banana.png';
+        if (lowerType.includes('pastry') || lowerType.includes('croissant') || lowerType.includes('ngàn lớp')) return '/assets/icons/pastry.png';
+        if (lowerType.includes('bread') || lowerType.includes('mì') || lowerType.includes('loaf') || lowerType.includes('pão') || lowerType.includes('cheese bread')) return '/assets/icons/bread.png';
+        if (lowerType.includes('cookie') || lowerType.includes('quy')) return '/assets/icons/cookie.png';
+        if (lowerType.includes('cupcake') || lowerType.includes('muffin')) return '/assets/icons/cupcake.png';
+        return '/assets/icons/default.png';
+    };
 
     return (
         <div>
@@ -42,9 +69,9 @@ const Products = () => {
                 </button>
             </div>
 
-            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-                <div className="p-4 border-b border-gray-100 flex flex-col sm:flex-row gap-4 justify-between">
-                    <div className="relative flex-1 max-w-md">
+            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden mb-6">
+                <div className="p-4 border-b border-gray-100 flex flex-col sm:flex-row gap-4 justify-between items-center">
+                    <div className="relative flex-1 max-w-md w-full">
                         <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
                         <input
                             type="text"
@@ -52,12 +79,17 @@ const Products = () => {
                             className="w-full pl-10 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
                         />
                     </div>
-                    <div className="flex gap-2">
-                        {['All', 'Cakes', 'Pastries', 'Breads'].map(category => (
+                    <div className="flex gap-2 overflow-x-auto pb-2 sm:pb-0 w-full sm:w-auto no-scrollbar" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
+                        <style>{`
+                            .no-scrollbar::-webkit-scrollbar {
+                                display: none;
+                            }
+                        `}</style>
+                        {categories.map(category => (
                             <button
                                 key={category}
                                 onClick={() => setFilter(category)}
-                                className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors ${filter === category
+                                className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors whitespace-nowrap ${filter === category
                                         ? 'bg-primary text-white'
                                         : 'bg-gray-50 text-gray-600 hover:bg-gray-100'
                                     }`}
@@ -67,61 +99,62 @@ const Products = () => {
                         ))}
                     </div>
                 </div>
+            </div>
 
-                <div className="overflow-x-auto">
-                    <table className="w-full">
-                        <thead className="bg-gray-50">
-                            <tr>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Product</th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Category</th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Price</th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Stock</th>
-                                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-gray-100">
-                            {filteredProducts.length > 0 ? (
-                                filteredProducts.map((product) => (
-                                    <tr key={product.id} className="hover:bg-gray-50 transition-colors">
-                                        <td className="px-6 py-4 whitespace-nowrap">
-                                            <div className="flex items-center">
-                                                <div className="h-10 w-10 flex-shrink-0">
-                                                    <img className="h-10 w-10 rounded-lg object-cover" src={product.image} alt="" />
-                                                </div>
-                                                <div className="ml-4">
-                                                    <div className="text-sm font-medium text-gray-900">{product.name}</div>
+            <div className="space-y-8">
+                {Object.entries(productsByType).map(([category, categoryProducts]) => (
+                    categoryProducts.length > 0 && (
+                        <div key={category}>
+                            <h2 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
+                                <span className="w-2 h-6 bg-primary rounded-full"></span>
+                                {category}
+                                <span className="text-sm font-normal text-gray-500 ml-2">({categoryProducts.length})</span>
+                            </h2>
+                            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-4">
+                                {categoryProducts.map((product) => (
+                                    <div key={product.id} className="bg-white rounded-lg border border-gray-100 shadow-sm hover:shadow-md transition-all group">
+                                        <div className="aspect-square w-full overflow-hidden rounded-t-lg bg-gray-50 relative">
+                                            <img 
+                                                src={product.image || getPlaceholderImage(product.type)} 
+                                                alt={product.name} 
+                                                className={`w-full h-full object-cover transition-transform duration-300 ${product.image ? 'group-hover:scale-105' : 'p-4 object-contain'}`}
+                                            />
+                                            <div className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                <button className="p-1.5 bg-white/90 backdrop-blur-sm rounded-full shadow-sm hover:bg-white text-gray-600 hover:text-primary transition-colors">
+                                                    <MoreHorizontal size={14} />
+                                                </button>
+                                            </div>
+                                        </div>
+                                        <div className="p-3">
+                                            <div className="mb-1">
+                                                <h3 className="font-bold text-gray-900 text-sm line-clamp-1" title={product.name}>{product.name}</h3>
+                                            </div>
+                                            <div className="flex items-center justify-between mt-2">
+                                                <span className="text-sm font-bold text-primary">
+                                                    {new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(product.price)}
+                                                </span>
+                                                <div className="flex items-center gap-1 text-xs text-gray-500">
+                                                    <Package size={12} />
+                                                    <span>{product.stock || 0}</span>
                                                 </div>
                                             </div>
-                                        </td>
-                                        <td className="px-6 py-4 whitespace-nowrap">
-                                            <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-100 text-gray-800">
-                                                {product.category}
-                                            </span>
-                                        </td>
-                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{product.price}</td>
-                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                            <div className="flex items-center gap-2">
-                                                <Package size={16} className="text-gray-400" />
-                                                {product.stock}
-                                            </div>
-                                        </td>
-                                        <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                                            <button className="text-gray-400 hover:text-gray-600">
-                                                <MoreHorizontal size={18} />
-                                            </button>
-                                        </td>
-                                    </tr>
-                                ))
-                            ) : (
-                                <tr>
-                                    <td colSpan="5" className="px-6 py-12 text-center text-gray-500">
-                                        No products found
-                                    </td>
-                                </tr>
-                            )}
-                        </tbody>
-                    </table>
-                </div>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )
+                ))}
+                
+                {Object.keys(productsByType).length === 0 && (
+                    <div className="text-center py-12 bg-white rounded-2xl border border-gray-100 border-dashed">
+                        <div className="w-16 h-16 bg-gray-50 rounded-full flex items-center justify-center mx-auto mb-4">
+                            <Package size={24} className="text-gray-400" />
+                        </div>
+                        <h3 className="text-lg font-medium text-gray-900">No products found</h3>
+                        <p className="text-gray-500 mt-1">Try adjusting your search or filters</p>
+                    </div>
+                )}
             </div>
         </div>
     );

@@ -1,11 +1,24 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
 import { LayoutDashboard, ShoppingBag, Users, BarChart3, Settings, LogOut, X, Package, ClipboardList } from 'lucide-react';
+import { useData } from '../../contexts/DataContext';
 
 const Sidebar = ({ isOpen, onClose }) => {
+    const { orders } = useData();
+
+    // Calculate pending orders for today
+    const pendingOrdersCount = orders.filter(order => {
+        if (order.status !== 'Pending' || !order.timeline?.received?.raw) return false;
+        const orderDate = new Date(order.timeline.received.raw);
+        const today = new Date();
+        return orderDate.getDate() === today.getDate() &&
+            orderDate.getMonth() === today.getMonth() &&
+            orderDate.getFullYear() === today.getFullYear();
+    }).length;
+
     const menuItems = [
         { icon: LayoutDashboard, label: 'Dashboard', path: '/' },
-        { icon: ShoppingBag, label: 'Orders', path: '/orders', badge: '20' },
+        { icon: ShoppingBag, label: 'Orders', path: '/orders', badge: pendingOrdersCount > 0 ? pendingOrdersCount.toString() : null },
         { icon: ClipboardList, label: 'Pre-Orders', path: '/pre-orders', badge: '4' },
         { icon: Package, label: 'Products', path: '/products' },
         { icon: Users, label: 'Customers', path: '/customers' },
@@ -31,9 +44,9 @@ const Sidebar = ({ isOpen, onClose }) => {
                     <div className="h-16 flex items-center justify-between px-6 border-b border-gray-100">
                         <div className="flex items-center gap-2">
                             <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
-                                <span className="text-white font-bold text-xl">B</span>
+                                <span className="text-white font-bold text-xl">T</span>
                             </div>
-                            <span className="text-xl font-bold text-gray-800">BakeryAdmin</span>
+                            <span className="text-xl font-bold text-gray-800">TheButterBake</span>
                         </div>
                         <button onClick={onClose} className="lg:hidden text-gray-500 hover:text-gray-700">
                             <X size={24} />

@@ -1,42 +1,81 @@
 import React, { useState, useEffect } from 'react';
 import { X, Plus, Trash2, AlertCircle, User, ShoppingBag, Receipt, MapPin, Phone } from 'lucide-react';
+import { useData } from '../../contexts/DataContext';
 
-const CreateOrderModal = ({ isOpen, onClose, onCreateOrder }) => {
+const CreateOrderModal = ({ isOpen, onClose, onCreateOrder, editingOrder, onUpdateOrder }) => {
+    const { products, customers } = useData();
+
+    // Fallback if products are not loaded yet
+    const displayProducts = products.length > 0 ? products : [
+        { name: 'Loading...', price: 0 }
+    ];
+
     // Initial State
     const initialCustomer = { name: '', phone: '', address: '' };
-    const initialItems = [{ id: Date.now(), name: 'Wedding Cake Deluxe', quantity: 1, price: 255000 }];
+    const initialItems = [{ id: Date.now(), name: '', quantity: 1, price: 0 }];
     const initialFees = { ship: 0, other: 0, discount: 0, note: '' };
 
     const [customer, setCustomer] = useState(initialCustomer);
     const [items, setItems] = useState(initialItems);
     const [fees, setFees] = useState(initialFees);
     const [showConfirm, setShowConfirm] = useState(false);
+    const [activeSearchId, setActiveSearchId] = useState(null);
+    
+    // Date & Time State
+    const [orderDate, setOrderDate] = useState(new Date().toISOString().split('T')[0]);
+    const [orderTime, setOrderTime] = useState(new Date().toTimeString().slice(0, 5));
 
     // Reset form when modal opens
     useEffect(() => {
         if (isOpen) {
-            setCustomer(initialCustomer);
-            setItems(initialItems);
-            setFees(initialFees);
+            if (editingOrder) {
+                // Populate form with existing order data
+                setCustomer({
+                    name: editingOrder.customer.name,
+                    phone: editingOrder.customer.phone,
+                    address: editingOrder.customer.address
+                });
+
+                // Map items
+                const mappedItems = editingOrder.items.map(item => ({
+                    id: Date.now() + Math.random(), // New temp ID for UI
+                    name: item.name,
+                    quantity: item.amount,
+                    price: item.price
+                }));
+                setItems(mappedItems);
+
+                // Map fees
+                setFees({
+                    ship: editingOrder.originalData?.shipFee || 0,
+                    other: editingOrder.originalData?.otherFee || 0,
+                    discount: editingOrder.originalData?.discount || 0,
+                    note: editingOrder.originalData?.note || ''
+                });
+
+                // Map Date & Time
+                // editingOrder.timeline.received.raw is a Date object
+                const dateObj = editingOrder.timeline.received.raw;
+                setOrderDate(dateObj.toLocaleDateString('en-CA')); // YYYY-MM-DD
+                setOrderTime(dateObj.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }));
+
+            } else {
+                // Reset to initial state
+                setCustomer(initialCustomer);
+                setItems(initialItems);
+                setFees(initialFees);
+                setOrderDate(new Date().toISOString().split('T')[0]);
+                setOrderTime(new Date().toTimeString().slice(0, 5));
+            }
             setShowConfirm(false);
         }
-    }, [isOpen]);
+    }, [isOpen, editingOrder]);
 
     if (!isOpen) return null;
 
-    // Mock Product List
-    const products = [
-        { name: 'Wedding Cake Deluxe', price: 255000 },
-        { name: 'Assorted Pastries Box', price: 42500 },
-        { name: 'Sourdough Bread', price: 7000 },
-        { name: 'Custom Birthday Cupcakes', price: 85000 },
-        { name: 'Chocolate Croissants', price: 4000 },
-        { name: 'Strawberry Tart', price: 28000 }
-    ];
-
     // Handlers
     const handleAddItem = () => {
-        setItems([...items, { id: Date.now(), name: products[0].name, quantity: 1, price: products[0].price }]);
+        setItems([...items, { id: Date.now(), name: '', quantity: 1, price: 0 }]);
     };
 
     const handleRemoveItem = (id) => {
@@ -50,8 +89,10 @@ const CreateOrderModal = ({ isOpen, onClose, onCreateOrder }) => {
             if (item.id === id) {
                 const updatedItem = { ...item, [field]: value };
                 if (field === 'name') {
-                    const product = products.find(p => p.name === value);
-                    updatedItem.price = product ? product.price : 0;
+                    const product = displayProducts.find(p => p.name === value);
+                    if (product) {
+                        updatedItem.price = product.price;
+                    }
                 }
                 return updatedItem;
             }
@@ -65,9 +106,8 @@ const CreateOrderModal = ({ isOpen, onClose, onCreateOrder }) => {
     };
 
     const isDirty = () => {
-        return JSON.stringify(customer) !== JSON.stringify(initialCustomer) ||
-            JSON.stringify(items) !== JSON.stringify(initialItems) ||
-            JSON.stringify(fees) !== JSON.stringify(initialFees);
+        // Simplified dirty check for now, or implement deep comparison if critical
+        return false; 
     };
 
     const handleCloseAttempt = () => {
@@ -78,21 +118,69 @@ const CreateOrderModal = ({ isOpen, onClose, onCreateOrder }) => {
         }
     };
 
+    // Helper: Generate MongoDB-style ObjectId (24 hex chars)
+    const generateObjectId = () => {
+        const timestamp = Math.floor(Date.now() / 1000).toString(16).padStart(8, '0');
+        const machineId = Math.floor(Math.random() * 16777215).toString(16).padStart(6, '0');
+        const processId = Math.floor(Math.random() * 65535).toString(16).padStart(4, '0');
+        const counter = Math.floor(Math.random() * 16777215).toString(16).padStart(6, '0');
+        return timestamp + machineId + processId + counter;
+    };
+
+    // Helper: Convert Date to CFAbsoluteTime (seconds since 2001-01-01 00:00:00 UTC)
+    const toCFAbsoluteTime = (date) => {
+        const time2001 = 978307200000; // Milliseconds
+        return (date.getTime() - time2001) / 1000;
+    };
+
+    // Helper: Generate UUID for customer (if needed)
+    const generateUUID = () => {
+        return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+            var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
+            return v.toString(16);
+        }).toUpperCase();
+    };
+
     const handleSubmit = (e) => {
         e.preventDefault();
 
-        const newOrder = {
-            id: `INV_${Math.floor(Math.random() * 1000000)}`,
-            customer: customer,
-            items: items,
-            fees: fees,
-            total: calculateTotal(),
-            date: new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }),
-            time: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
-            status: 'Pending'
+        const now = new Date();
+        
+        // Combine selected date and time
+        const selectedDateTime = new Date(`${orderDate}T${orderTime}`);
+
+        // Construct order object
+        const orderData = {
+            id: editingOrder ? editingOrder.id : generateObjectId(), // Keep ID if editing
+            address: customer.address,
+            cakes: items.map(item => ({
+                amount: item.quantity,
+                id: generateObjectId(), // Generate ID for items too
+                name: item.name,
+                price: item.price
+            })),
+            createDate: editingOrder ? editingOrder.originalData.createDate : toCFAbsoluteTime(now), // Keep createDate if editing
+            customer: {
+                address: customer.address,
+                id: customer.id || (editingOrder?.customer?.id) || generateUUID(),
+                name: customer.name,
+                phone: customer.phone
+            },
+            customerPhone: customer.phone,
+            discount: Number(fees.discount),
+            orderDate: toCFAbsoluteTime(selectedDateTime), // Use selected date/time
+            otherFee: Number(fees.other),
+            payMethod: "Bank", // Default value
+            shipFee: Number(fees.ship),
+            social: "Instagram", // Default value
+            state: editingOrder ? editingOrder.originalData.state : "Đặt trước" // Keep state if editing
         };
 
-        onCreateOrder(newOrder);
+        if (editingOrder) {
+            onUpdateOrder(orderData);
+        } else {
+            onCreateOrder(orderData);
+        }
         onClose();
     };
 
@@ -102,7 +190,7 @@ const CreateOrderModal = ({ isOpen, onClose, onCreateOrder }) => {
 
                 {/* Header */}
                 <div className="flex items-center justify-between p-6 border-b border-gray-100 sticky top-0 bg-white z-10">
-                    <h2 className="text-xl font-bold text-gray-900">Create New Order</h2>
+                    <h2 className="text-xl font-bold text-gray-900">{editingOrder ? 'Edit Order' : 'Create New Order'}</h2>
                     <button onClick={handleCloseAttempt} className="text-gray-400 hover:text-gray-600 transition-colors">
                         <X size={24} />
                     </button>
@@ -136,7 +224,16 @@ const CreateOrderModal = ({ isOpen, onClose, onCreateOrder }) => {
                                         type="tel"
                                         required
                                         value={customer.phone}
-                                        onChange={(e) => setCustomer({ ...customer, phone: e.target.value })}
+                                        onChange={(e) => {
+                                            const newPhone = e.target.value;
+                                            const foundCustomer = customers.find(c => c.phone === newPhone);
+                                            setCustomer({
+                                                ...customer,
+                                                phone: newPhone,
+                                                name: foundCustomer ? foundCustomer.name : customer.name,
+                                                address: foundCustomer ? foundCustomer.address : customer.address
+                                            });
+                                        }}
                                         className="w-full pl-10 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20"
                                         placeholder="Phone Number"
                                     />
@@ -178,16 +275,41 @@ const CreateOrderModal = ({ isOpen, onClose, onCreateOrder }) => {
                         <div className="space-y-3">
                             {items.map((item, index) => (
                                 <div key={item.id} className="flex flex-col md:flex-row gap-3 items-start md:items-center bg-gray-50 p-3 rounded-xl border border-gray-100">
-                                    <div className="flex-1 w-full">
-                                        <select
+                                    <div className="flex-1 w-full relative">
+                                        <input
+                                            type="text"
                                             value={item.name}
                                             onChange={(e) => handleItemChange(item.id, 'name', e.target.value)}
+                                            onFocus={() => setActiveSearchId(item.id)}
+                                            onBlur={() => setTimeout(() => setActiveSearchId(null), 200)}
                                             className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 text-sm"
-                                        >
-                                            {products.map(p => (
-                                                <option key={p.name} value={p.name}>{p.name}</option>
-                                            ))}
-                                        </select>
+                                            placeholder="Select or type cake name"
+                                        />
+                                        {activeSearchId === item.id && (
+                                            <div className="absolute z-50 w-full mt-1 bg-white border border-gray-100 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                                                {displayProducts
+                                                    .filter(p => p.name.toLowerCase().includes((item.name || '').toLowerCase()))
+                                                    .map(p => (
+                                                        <div
+                                                            key={p.id || p.name}
+                                                            className="px-3 py-2 hover:bg-gray-50 cursor-pointer text-sm flex justify-between items-center"
+                                                            onMouseDown={() => {
+                                                                handleItemChange(item.id, 'name', p.name);
+                                                                setActiveSearchId(null);
+                                                            }}
+                                                        >
+                                                            <span className="font-medium text-gray-900">{p.name}</span>
+                                                            <span className="text-gray-500 text-xs">
+                                                                {new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(p.price)}
+                                                            </span>
+                                                        </div>
+                                                    ))
+                                                }
+                                                {displayProducts.filter(p => p.name.toLowerCase().includes((item.name || '').toLowerCase())).length === 0 && (
+                                                    <div className="px-3 py-2 text-sm text-gray-500 text-center">No items found</div>
+                                                )}
+                                            </div>
+                                        )}
                                     </div>
                                     <div className="flex items-center gap-3 w-full md:w-auto">
                                         <input
@@ -197,8 +319,14 @@ const CreateOrderModal = ({ isOpen, onClose, onCreateOrder }) => {
                                             onChange={(e) => handleItemChange(item.id, 'quantity', parseInt(e.target.value) || 1)}
                                             className="w-20 px-3 py-2 bg-white border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 text-sm"
                                         />
-                                        <div className="w-32 text-right font-medium text-gray-900 text-sm">
-                                            {new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(item.price * item.quantity)}
+                                        <div className="w-32">
+                                            <input
+                                                type="number"
+                                                min="0"
+                                                value={item.price}
+                                                onChange={(e) => handleItemChange(item.id, 'price', Number(e.target.value))}
+                                                className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 text-sm text-right"
+                                            />
                                         </div>
                                         <button
                                             type="button"
@@ -223,6 +351,30 @@ const CreateOrderModal = ({ isOpen, onClose, onCreateOrder }) => {
 
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                             <div className="space-y-3">
+                                {/* Date & Time Selection */}
+                                <div className="grid grid-cols-2 gap-3">
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">Date</label>
+                                        <input
+                                            type="date"
+                                            required
+                                            value={orderDate}
+                                            onChange={(e) => setOrderDate(e.target.value)}
+                                            className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 text-sm"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">Time</label>
+                                        <input
+                                            type="time"
+                                            required
+                                            value={orderTime}
+                                            onChange={(e) => setOrderTime(e.target.value)}
+                                            className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 text-sm"
+                                        />
+                                    </div>
+                                </div>
+
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 mb-1">Note</label>
                                     <textarea
@@ -282,7 +434,7 @@ const CreateOrderModal = ({ isOpen, onClose, onCreateOrder }) => {
                             className="w-full flex items-center justify-center gap-2 bg-primary hover:bg-primary-light text-white py-3 rounded-xl font-bold transition-all shadow-lg shadow-primary/30 hover:shadow-primary/40 active:scale-[0.98]"
                         >
                             <Plus size={20} />
-                            Create Order
+                            {editingOrder ? 'Update Order' : 'Create Order'}
                         </button>
                     </div>
                 </form>

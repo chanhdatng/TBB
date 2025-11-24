@@ -5,10 +5,10 @@ const StatsCard = ({ title, value, subValue, trend, trendValue, icon: Icon, colo
     const isPositive = trend === 'up';
 
     return (
-        <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow">
+        <div className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow">
             <div className="flex items-start justify-between mb-4">
-                <div className={`p-3 rounded-xl ${color}`}>
-                    <Icon size={24} className="text-white" />
+                <div className={`p-2 rounded-xl ${color}`}>
+                    <Icon size={20} className="text-white" />
                 </div>
                 <button className="text-gray-400 hover:text-gray-600">
                     <MoreHorizontal size={20} />
@@ -17,7 +17,7 @@ const StatsCard = ({ title, value, subValue, trend, trendValue, icon: Icon, colo
 
             <div>
                 <p className="text-sm font-medium text-gray-500 mb-1">{title}</p>
-                <h3 className="text-2xl font-bold text-gray-900 mb-1">{value}</h3>
+                <h3 className="text-xl lg:text-2xl font-bold text-gray-900 mb-1">{value}</h3>
                 {subValue && <p className="text-sm text-gray-500 mb-1">{subValue}</p>}
                 <div className="flex items-center gap-2">
                     {trend !== 'neutral' && (

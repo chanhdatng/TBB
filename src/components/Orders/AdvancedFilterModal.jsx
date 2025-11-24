@@ -116,6 +116,8 @@ const AdvancedFilterModal = ({ isOpen, onClose, onApply, availableCakeTypes, ini
                         </div>
                     </div>
 
+
+
                     {/* Cake Types */}
                     <div>
                         <h3 className="text-sm font-bold text-gray-900 mb-3">Cake Types</h3>
