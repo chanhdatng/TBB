@@ -5,9 +5,11 @@ import DateSelector from '../components/Orders/DateSelector';
 import AdvancedFilterModal from '../components/Orders/AdvancedFilterModal';
 import ShiftSummaryCards from '../components/Orders/ShiftSummaryCards';
 import OrderDetailsModal from '../components/Orders/OrderDetailsModal';
+import DraftListModal from '../components/Orders/DraftListModal';
 import { database } from '../firebase';
 import { ref, set, update, remove } from "firebase/database";
 import { useData } from '../contexts/DataContext';
+import { copyToClipboard } from '../utils/clipboard';
 
 const Orders = () => {
     // Helper to format date as YYYY-MM-DD in local time
@@ -23,7 +25,7 @@ const Orders = () => {
         return new Date((timestamp + 978307200) * 1000);
     };
 
-    const { orders } = useData();
+    const { orders, customers } = useData();
     // Initialize with today's date in YYYY-MM-DD format (Local Time)
     const [selectedDate, setSelectedDate] = useState(formatLocalDate(new Date()));
     const [isModalOpen, setIsModalOpen] = useState(false);
@@ -44,9 +46,66 @@ const Orders = () => {
     const [searchQuery, setSearchQuery] = useState('');
     const [activeStatusId, setActiveStatusId] = useState(null);
     const [editingOrder, setEditingOrder] = useState(null);
+    
+    // Drafts State
+    const [drafts, setDrafts] = useState([]);
+    const [isDraftModalOpen, setIsDraftModalOpen] = useState(false);
+    const [selectedDraft, setSelectedDraft] = useState(null);
+
+    // Load drafts from localStorage
+    const loadDrafts = () => {
+        const savedDrafts = localStorage.getItem('order_drafts');
+        if (savedDrafts) {
+            setDrafts(JSON.parse(savedDrafts));
+        }
+    };
+
+    useEffect(() => {
+        loadDrafts();
+        // Listen for storage events (in case drafts are updated in another tab/window)
+        window.addEventListener('storage', loadDrafts);
+        return () => window.removeEventListener('storage', loadDrafts);
+    }, []);
+
+    const handleDraftSaved = () => {
+        loadDrafts();
+    };
+
+    const handleDeleteDraft = (id) => {
+        if (window.confirm('Are you sure you want to delete this draft?')) {
+            const newDrafts = drafts.filter(d => d.id !== id);
+            setDrafts(newDrafts);
+            localStorage.setItem('order_drafts', JSON.stringify(newDrafts));
+        }
+    };
+
+    const handleSelectDraft = (draft) => {
+        setSelectedDraft(draft);
+        setIsDraftModalOpen(false);
+        setIsModalOpen(true);
+    };
 
     const handleCreateOrder = (newOrder) => {
         set(ref(database, 'orders/' + newOrder.id), newOrder);
+
+        // Check if customer exists (normalize phone for comparison)
+        const normalizePhone = (p) => p.replace(/\D/g, '');
+        const newPhoneNormalized = normalizePhone(newOrder.customer.phone);
+        
+        const customerExists = customers.some(c => normalizePhone(c.phone) === newPhoneNormalized);
+
+        if (!customerExists) {
+            console.log("Creating new customer:", newOrder.customer);
+            // Create new customer
+            const newCustomer = {
+                id: newOrder.customer.id,
+                name: newOrder.customer.name,
+                phone: newOrder.customer.phone,
+                address: newOrder.customer.address,
+                createDate: newOrder.createDate
+            };
+            set(ref(database, 'newCustomers/' + newCustomer.phone), newCustomer);
+        }
     };
 
     const handleUpdateOrder = (updatedOrder) => {
@@ -216,8 +275,21 @@ const Orders = () => {
                         )}
                     </button>
                     <button
+                        onClick={() => setIsDraftModalOpen(true)}
+                        className="flex items-center gap-2 bg-white border border-gray-200 hover:bg-gray-50 text-gray-700 px-4 py-2 rounded-lg font-medium transition-colors relative"
+                    >
+                        <Layers size={20} />
+                        Drafts
+                        {drafts.length > 0 && (
+                            <span className="absolute -top-2 -right-2 w-5 h-5 bg-red-500 text-white text-xs font-bold rounded-full flex items-center justify-center shadow-sm">
+                                {drafts.length}
+                            </span>
+                        )}
+                    </button>
+                    <button
                         onClick={() => {
                             setEditingOrder(null);
+                            setSelectedDraft(null);
                             setIsModalOpen(true);
                         }}
                         className="flex items-center gap-2 bg-primary hover:bg-primary-light text-white px-4 py-2 rounded-lg font-medium transition-colors"
@@ -243,10 +315,22 @@ const Orders = () => {
                 onClose={() => {
                     setIsModalOpen(false);
                     setEditingOrder(null);
+                    setSelectedDraft(null);
+                    loadDrafts(); // Reload drafts when modal closes (in case one was saved)
                 }}
                 onCreateOrder={handleCreateOrder}
                 editingOrder={editingOrder}
                 onUpdateOrder={handleUpdateOrder}
+                initialData={selectedDraft}
+                onDraftSaved={handleDraftSaved}
+            />
+
+            <DraftListModal
+                isOpen={isDraftModalOpen}
+                onClose={() => setIsDraftModalOpen(false)}
+                drafts={drafts}
+                onSelectDraft={handleSelectDraft}
+                onDeleteDraft={handleDeleteDraft}
             />
 
             <AdvancedFilterModal
@@ -342,7 +426,7 @@ const Orders = () => {
                             <tr>
                                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-[220px]">Customer</th>
                                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-[180px]">Order Details</th>
-                                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-[90px]">Time</th>
+                                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-[120px]">Time</th>
                                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-[110px]">Total</th>
                                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-[90px]">Status</th>
                             </tr>
@@ -353,7 +437,11 @@ const Orders = () => {
                                     <tr
                                         key={order.id}
                                         onClick={() => handleOpenDetails(order)}
-                                        className="hover:bg-gray-50 transition-colors group cursor-pointer"
+                                        className={`transition-colors group cursor-pointer ${
+                                            selectedOrderForDetails?.id === order.id 
+                                            ? 'bg-blue-50 hover:bg-blue-100' 
+                                            : 'hover:bg-gray-50'
+                                        }`}
                                     >
                                         {/* Customer Info */}
                                         <td className="px-4 py-4">
@@ -362,11 +450,22 @@ const Orders = () => {
                                                     <User size={20} />
                                                 </div>
                                                 <div className="min-w-0">
-                                                    <div className="text-sm font-bold text-gray-900 truncate">
+                                                    <div
+                                                        className="text-sm font-bold text-gray-900 truncate"
+                                                        title={order.customer.name}
+                                                    >
                                                         <HighlightText text={order.customer.name} highlight={searchQuery} />
                                                     </div>
-                                                    <div className="text-xs text-gray-500 truncate">{order.customer.phone}</div>
-                                                    <div className="text-xs text-gray-400 line-clamp-1" title={order.customer.address}>
+                                                    <div
+                                                        className="text-xs text-gray-500 truncate"
+                                                        title={order.customer.phone}
+                                                    >
+                                                        {order.customer.phone}
+                                                    </div>
+                                                    <div
+                                                        className="text-xs text-gray-400 line-clamp-1"
+                                                        title={order.customer.address}
+                                                    >
                                                         <HighlightText text={order.customer.address} highlight={searchQuery} />
                                                     </div>
                                                 </div>

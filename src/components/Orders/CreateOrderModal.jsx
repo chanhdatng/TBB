@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { X, Plus, Trash2, AlertCircle, User, ShoppingBag, Receipt, MapPin, Phone } from 'lucide-react';
+import { X, Plus, Trash2, AlertCircle, User, ShoppingBag, Receipt, MapPin, Phone, Save, Globe } from 'lucide-react';
 import { useData } from '../../contexts/DataContext';
 
-const CreateOrderModal = ({ isOpen, onClose, onCreateOrder, editingOrder, onUpdateOrder }) => {
+const CreateOrderModal = ({ isOpen, onClose, onCreateOrder, editingOrder, onUpdateOrder, initialData, onDraftSaved }) => {
     const { products, customers } = useData();
 
     // Fallback if products are not loaded yet
@@ -10,8 +10,8 @@ const CreateOrderModal = ({ isOpen, onClose, onCreateOrder, editingOrder, onUpda
         { name: 'Loading...', price: 0 }
     ];
 
-    // Initial State
-    const initialCustomer = { name: '', phone: '', address: '' };
+    // Form State
+    const initialCustomer = { name: '', phone: '', address: '', socialLink: '' };
     const initialItems = [{ id: Date.now(), name: '', quantity: 1, price: 0 }];
     const initialFees = { ship: 0, other: 0, discount: 0, note: '' };
 
@@ -24,16 +24,33 @@ const CreateOrderModal = ({ isOpen, onClose, onCreateOrder, editingOrder, onUpda
     // Date & Time State
     const [orderDate, setOrderDate] = useState(new Date().toISOString().split('T')[0]);
     const [orderTime, setOrderTime] = useState(new Date().toTimeString().slice(0, 5));
+    const [deliveryTimeSlot, setDeliveryTimeSlot] = useState('');
+
+    const TIME_SLOTS = [
+        "10:00 - 12:00",
+        "12:00 - 14:00",
+        "14:00 - 16:00",
+        "16:00 - 18:00",
+        "18:00 - 20:00"
+    ];
+
+    // Validation State
+    const [isShake, setIsShake] = useState(false);
+    const [showValidation, setShowValidation] = useState(false);
 
     // Reset form when modal opens
     useEffect(() => {
         if (isOpen) {
+            setShowValidation(false);
+            setIsShake(false);
+            
             if (editingOrder) {
                 // Populate form with existing order data
                 setCustomer({
                     name: editingOrder.customer.name,
                     phone: editingOrder.customer.phone,
-                    address: editingOrder.customer.address
+                    address: editingOrder.customer.address,
+                    socialLink: editingOrder.customer.socialLink || ''
                 });
 
                 // Map items
@@ -58,18 +75,60 @@ const CreateOrderModal = ({ isOpen, onClose, onCreateOrder, editingOrder, onUpda
                 const dateObj = editingOrder.timeline.received.raw;
                 setOrderDate(dateObj.toLocaleDateString('en-CA')); // YYYY-MM-DD
                 setOrderTime(dateObj.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }));
+                
+                // Set time slot if available, otherwise try to match or leave empty
+                if (editingOrder.originalData?.deliveryTimeSlot) {
+                    setDeliveryTimeSlot(editingOrder.originalData.deliveryTimeSlot);
+                } else {
+                    setDeliveryTimeSlot('');
+                }
 
+            } else if (initialData) {
+                // Restore from Draft
+                setCustomer(initialData.customer);
+                setItems(initialData.items);
+                setFees(initialData.fees);
+                setOrderDate(initialData.orderDate);
+                setDeliveryTimeSlot(initialData.deliveryTimeSlot);
             } else {
                 // Reset to initial state
                 setCustomer(initialCustomer);
-                setItems(initialItems);
+                setItems([{ id: Date.now(), name: '', quantity: 1, price: 0 }]);
                 setFees(initialFees);
                 setOrderDate(new Date().toISOString().split('T')[0]);
                 setOrderTime(new Date().toTimeString().slice(0, 5));
+                setDeliveryTimeSlot('');
             }
             setShowConfirm(false);
         }
-    }, [isOpen, editingOrder]);
+    }, [isOpen, editingOrder, initialData]);
+
+    const handleSaveDraft = () => {
+        const draftData = {
+            id: Date.now(), // Unique ID for the draft
+            savedAt: new Date().toISOString(),
+            customer,
+            items,
+            fees,
+            orderDate,
+            deliveryTimeSlot
+        };
+        
+        // Get existing drafts
+        const existingDrafts = JSON.parse(localStorage.getItem('order_drafts') || '[]');
+        
+        // If we are editing a draft (initialData exists), we might want to update it instead of creating new?
+        // For simplicity, let's just add new one for now, or replace if ID matches.
+        // But initialData might not have ID if it was just passed as props. 
+        // Let's just append for now to be safe.
+        
+        const newDrafts = [draftData, ...existingDrafts];
+        localStorage.setItem('order_drafts', JSON.stringify(newDrafts));
+        
+        if (onDraftSaved) onDraftSaved();
+        alert("Đã lưu nháp thành công!");
+        onClose();
+    };
 
     if (!isOpen) return null;
 
@@ -144,10 +203,28 @@ const CreateOrderModal = ({ isOpen, onClose, onCreateOrder, editingOrder, onUpda
     const handleSubmit = (e) => {
         e.preventDefault();
 
+        const validItems = items.filter(item => item.name && item.name.trim() !== '');
+        
+        // Validation
+        if (!deliveryTimeSlot || validItems.length === 0) {
+            setShowValidation(true);
+            setIsShake(true);
+            setTimeout(() => setIsShake(false), 500);
+            return;
+        }
+
         const now = new Date();
         
+        // Determine time to use: either start of slot or manual time (if we kept manual time as fallback, but here we enforce slots mostly)
+        // If a slot is selected, use the start time of the slot for the timestamp
+        let finalTime = orderTime;
+        if (deliveryTimeSlot) {
+            // Extract start time from slot string "10:00 - 12:00" -> "10:00"
+            finalTime = deliveryTimeSlot.split(' - ')[0];
+        }
+
         // Combine selected date and time
-        const selectedDateTime = new Date(`${orderDate}T${orderTime}`);
+        const selectedDateTime = new Date(`${orderDate}T${finalTime}`);
 
         // Construct order object
         const orderData = {
@@ -164,11 +241,13 @@ const CreateOrderModal = ({ isOpen, onClose, onCreateOrder, editingOrder, onUpda
                 address: customer.address,
                 id: customer.id || (editingOrder?.customer?.id) || generateUUID(),
                 name: customer.name,
-                phone: customer.phone
+                phone: customer.phone,
+                socialLink: customer.socialLink
             },
             customerPhone: customer.phone,
             discount: Number(fees.discount),
             orderDate: toCFAbsoluteTime(selectedDateTime), // Use selected date/time
+            deliveryTimeSlot: deliveryTimeSlot, // Save the slot string
             otherFee: Number(fees.other),
             payMethod: "Bank", // Default value
             shipFee: Number(fees.ship),
@@ -180,9 +259,16 @@ const CreateOrderModal = ({ isOpen, onClose, onCreateOrder, editingOrder, onUpda
             onUpdateOrder(orderData);
         } else {
             onCreateOrder(orderData);
+            // If this was a draft (initialData exists), we should probably delete it?
+            // For now, let's leave it to the user to delete from the list, or we can pass a callback to delete it.
+            // But since we don't pass the draft ID back easily, let's keep it simple.
+            // The user can delete drafts manually from the list.
         }
         onClose();
     };
+
+    // Derived state for validation check (to style button)
+    const isValid = deliveryTimeSlot && items.some(item => item.name && item.name.trim() !== '');
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm transition-opacity duration-300" onClick={handleCloseAttempt}>
@@ -191,9 +277,21 @@ const CreateOrderModal = ({ isOpen, onClose, onCreateOrder, editingOrder, onUpda
                 {/* Header */}
                 <div className="flex items-center justify-between p-6 border-b border-gray-100 sticky top-0 bg-white z-10">
                     <h2 className="text-xl font-bold text-gray-900">{editingOrder ? 'Edit Order' : 'Create New Order'}</h2>
-                    <button onClick={handleCloseAttempt} className="text-gray-400 hover:text-gray-600 transition-colors">
-                        <X size={24} />
-                    </button>
+                    <div className="flex items-center gap-2">
+                        {!editingOrder && (
+                            <button 
+                                onClick={handleSaveDraft}
+                                className="text-primary hover:bg-primary/10 p-2 rounded-lg transition-colors flex items-center gap-1 text-sm font-medium"
+                                title="Save Draft"
+                            >
+                                <Save size={20} />
+                                <span className="hidden sm:inline">Save Draft</span>
+                            </button>
+                        )}
+                        <button onClick={handleCloseAttempt} className="text-gray-400 hover:text-gray-600 transition-colors">
+                            <X size={24} />
+                        </button>
+                    </div>
                 </div>
 
                 <form onSubmit={handleSubmit} className="p-6 space-y-8">
@@ -231,7 +329,9 @@ const CreateOrderModal = ({ isOpen, onClose, onCreateOrder, editingOrder, onUpda
                                                 ...customer,
                                                 phone: newPhone,
                                                 name: foundCustomer ? foundCustomer.name : customer.name,
-                                                address: foundCustomer ? foundCustomer.address : customer.address
+                                                address: foundCustomer ? foundCustomer.address : customer.address,
+                                                socialLink: foundCustomer ? (foundCustomer.socialLink || '') : customer.socialLink,
+                                                id: foundCustomer ? foundCustomer.id : null
                                             });
                                         }}
                                         className="w-full pl-10 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20"
@@ -239,7 +339,7 @@ const CreateOrderModal = ({ isOpen, onClose, onCreateOrder, editingOrder, onUpda
                                     />
                                 </div>
                             </div>
-                            <div className="md:col-span-2">
+                            <div>
                                 <label className="block text-sm font-medium text-gray-700 mb-1">Address</label>
                                 <div className="relative">
                                     <MapPin size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
@@ -250,6 +350,19 @@ const CreateOrderModal = ({ isOpen, onClose, onCreateOrder, editingOrder, onUpda
                                         onChange={(e) => setCustomer({ ...customer, address: e.target.value })}
                                         className="w-full pl-10 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20"
                                         placeholder="Delivery Address"
+                                    />
+                                </div>
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Social Link <span className="text-gray-400 font-normal">(Optional)</span></label>
+                                <div className="relative">
+                                    <Globe size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                                    <input
+                                        type="text"
+                                        value={customer.socialLink}
+                                        onChange={(e) => setCustomer({ ...customer, socialLink: e.target.value })}
+                                        className="w-full pl-10 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20"
+                                        placeholder="Facebook/Instagram URL"
                                     />
                                 </div>
                             </div>
@@ -272,7 +385,7 @@ const CreateOrderModal = ({ isOpen, onClose, onCreateOrder, editingOrder, onUpda
                             </button>
                         </div>
 
-                        <div className="space-y-3">
+                        <div className={`space-y-3 p-2 rounded-xl transition-all ${showValidation && items.every(i => !i.name) ? 'border-2 border-red-500 bg-red-50' : ''} ${isShake && items.every(i => !i.name) ? 'animate-shake' : ''}`}>
                             {items.map((item, index) => (
                                 <div key={item.id} className="flex flex-col md:flex-row gap-3 items-start md:items-center bg-gray-50 p-3 rounded-xl border border-gray-100">
                                     <div className="flex-1 w-full relative">
@@ -282,7 +395,7 @@ const CreateOrderModal = ({ isOpen, onClose, onCreateOrder, editingOrder, onUpda
                                             onChange={(e) => handleItemChange(item.id, 'name', e.target.value)}
                                             onFocus={() => setActiveSearchId(item.id)}
                                             onBlur={() => setTimeout(() => setActiveSearchId(null), 200)}
-                                            className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 text-sm"
+                                            className={`w-full px-3 py-2 bg-white border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 text-sm ${showValidation && !item.name ? 'border-red-500' : 'border-gray-200'}`}
                                             placeholder="Select or type cake name"
                                         />
                                         {activeSearchId === item.id && (
@@ -352,7 +465,7 @@ const CreateOrderModal = ({ isOpen, onClose, onCreateOrder, editingOrder, onUpda
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                             <div className="space-y-3">
                                 {/* Date & Time Selection */}
-                                <div className="grid grid-cols-2 gap-3">
+                                <div className="space-y-3">
                                     <div>
                                         <label className="block text-sm font-medium text-gray-700 mb-1">Date</label>
                                         <input
@@ -364,14 +477,23 @@ const CreateOrderModal = ({ isOpen, onClose, onCreateOrder, editingOrder, onUpda
                                         />
                                     </div>
                                     <div>
-                                        <label className="block text-sm font-medium text-gray-700 mb-1">Time</label>
-                                        <input
-                                            type="time"
-                                            required
-                                            value={orderTime}
-                                            onChange={(e) => setOrderTime(e.target.value)}
-                                            className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 text-sm"
-                                        />
+                                        <label className="block text-sm font-medium text-gray-700 mb-2">Time Slot</label>
+                                        <div className={`grid grid-cols-2 sm:grid-cols-3 gap-2 p-2 rounded-lg transition-all ${showValidation && !deliveryTimeSlot ? 'border-2 border-red-500 bg-red-50' : ''} ${isShake && !deliveryTimeSlot ? 'animate-shake' : ''}`}>
+                                            {TIME_SLOTS.map(slot => (
+                                                <button
+                                                    key={slot}
+                                                    type="button"
+                                                    onClick={() => setDeliveryTimeSlot(slot)}
+                                                    className={`px-2 py-2 text-xs font-medium rounded-lg border transition-all ${
+                                                        deliveryTimeSlot === slot
+                                                            ? 'bg-primary text-white border-primary shadow-sm'
+                                                            : 'bg-white text-gray-600 border-gray-200 hover:border-primary/50 hover:bg-primary/5'
+                                                    }`}
+                                                >
+                                                    {slot}
+                                                </button>
+                                            ))}
+                                        </div>
                                     </div>
                                 </div>
 

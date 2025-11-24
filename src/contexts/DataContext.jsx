@@ -45,7 +45,8 @@ export const DataProvider = ({ children }) => {
                     const createDateObj = parseCFTime(orderData.createDate); // Order Date
 
                     const receiveDate = orderDateObj.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
-                    const receiveTime = orderDateObj.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
+                    // Use deliveryTimeSlot if available, otherwise format the time from timestamp
+                    const receiveTime = orderData.deliveryTimeSlot || orderDateObj.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
 
                     const createDate = createDateObj.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
                     const createTime = createDateObj.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
@@ -78,7 +79,8 @@ export const DataProvider = ({ children }) => {
                         customer: {
                             name: orderData.customer?.name || 'Unknown',
                             phone: orderData.customer?.phone || orderData.customerPhone || 'N/A',
-                            address: orderData.address || 'N/A'
+                            address: orderData.address || 'N/A',
+                            socialLink: orderData.customer?.socialLink || ''
                         },
                         items: items,
                         timeline: {
