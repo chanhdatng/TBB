@@ -46,6 +46,9 @@ const Products = () => {
     const getPlaceholderImage = (type) => {
         const lowerType = (type || '').toLowerCase();
         if (lowerType.includes('canele') || lowerType.includes('canelé')) return '/assets/icons/canele.png';
+        if (lowerType.includes('shiopan') || lowerType.includes('salt bread') || lowerType.includes('muối')) return '/assets/icons/shiopan.png';
+        if (lowerType.includes('roll') || lowerType.includes('quế')) return '/assets/icons/cinnamon_roll.png';
+        if (lowerType.includes('cheeseburn') || lowerType.includes('basque') || lowerType.includes('burnt')) return '/assets/icons/cheese_burn_cake.png';
         if (lowerType.includes('cake') || lowerType.includes('bánh kem') || lowerType.includes('sinh nhật')) return '/assets/icons/cake.png';
         if (lowerType.includes('brownie') || lowerType.includes('socola')) return '/assets/icons/brownie.png';
         if (lowerType.includes('banana') || lowerType.includes('chuối')) return '/assets/icons/banana.png';
