@@ -1,8 +1,61 @@
-import React from 'react';
-import { X, CakeSlice, User, MapPin, Phone, Edit2, Trash2 } from 'lucide-react';
+import React, { useState } from 'react';
+import { X, CakeSlice, User, MapPin, Phone, Edit2, Trash2, Facebook, Instagram, Globe, UserPlus, Check } from 'lucide-react';
+import { copyToClipboard } from '../../utils/clipboard';
+import { useData } from '../../contexts/DataContext';
+import { ref, set } from "firebase/database";
+import { database } from '../../firebase';
 
 const OrderDetailsModal = ({ isOpen, onClose, order, onEdit, onDelete }) => {
+    const { customers } = useData();
+    const [isSyncing, setIsSyncing] = useState(false);
+    const [syncSuccess, setSyncSuccess] = useState(false);
+
     if (!isOpen || !order) return null;
+
+    // Helper to normalize phone (remove non-digits)
+    const normalizePhone = (p) => p ? p.replace(/\D/g, '') : '';
+
+    // Check if customer exists in newCustomers (by normalized phone)
+    const customerExists = customers.some(c => normalizePhone(c.phone) === normalizePhone(order.customer.phone));
+
+    const handleSyncCustomer = async () => {
+        if (customerExists || isSyncing) return;
+
+        setIsSyncing(true);
+        try {
+            // Logic aligned with Orders.jsx:
+            // 1. Use phone number as the key
+            // 2. Use existing ID if available
+            // 3. Preserve createDate from original order if possible
+            
+            const customerKey = order.customer.phone; // Use phone as key like in Orders.jsx
+            
+            if (!customerKey) {
+                throw new Error("Customer phone is missing");
+            }
+
+            const customerData = {
+                id: order.customer.id || order.originalData?.customer?.id || `customer_${Date.now()}`,
+                name: order.customer.name,
+                phone: order.customer.phone,
+                address: order.customer.address,
+                // Include socialLink as it's useful, even if Orders.jsx might miss it sometimes
+                socialLink: order.customer.socialLink || '', 
+                // Use original order createDate or current time
+                createDate: order.originalData?.createDate || Math.floor(Date.now() / 1000)
+            };
+
+            await set(ref(database, 'newCustomers/' + customerKey), customerData);
+            
+            setSyncSuccess(true);
+            setTimeout(() => setSyncSuccess(false), 3000);
+        } catch (error) {
+            console.error("Error syncing customer:", error);
+            alert("Lỗi khi đồng bộ khách hàng: " + error.message);
+        } finally {
+            setIsSyncing(false);
+        }
+    };
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm transition-opacity duration-300" onClick={onClose}>
@@ -10,7 +63,10 @@ const OrderDetailsModal = ({ isOpen, onClose, order, onEdit, onDelete }) => {
                 {/* Header */}
                 <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between bg-gray-50/50">
                     <div>
-                        <h3 className="text-lg font-bold text-gray-900">Order Details</h3>
+                        <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                            Order Details
+                            <span className="text-xs font-normal text-gray-400">#{order.id}</span>
+                        </h3>
                         <p className="text-sm text-gray-500">
                             {order.timeline.received.date} • {order.timeline.received.time}
                         </p>
@@ -26,19 +82,92 @@ const OrderDetailsModal = ({ isOpen, onClose, order, onEdit, onDelete }) => {
                 {/* Body */}
                 <div className="p-6 max-h-[60vh] overflow-y-auto">
                     {/* Customer Info Summary */}
-                    <div className="mb-6 p-4 bg-gray-50 rounded-xl border border-gray-100">
-                        <div className="flex items-center gap-3 mb-3">
-                            <div className="w-10 h-10 rounded-full bg-white border border-gray-200 flex items-center justify-center text-primary shadow-sm">
-                                <User size={20} />
+                    <div className="mb-6 p-4 bg-gray-50 rounded-xl border border-gray-100 relative group">
+                        {/* Sync Button */}
+                        {!customerExists && (
+                            <div className="absolute top-4 right-4">
+                                <button
+                                    onClick={handleSyncCustomer}
+                                    disabled={isSyncing || syncSuccess}
+                                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all shadow-sm ${
+                                        syncSuccess 
+                                            ? 'bg-green-100 text-green-700 border border-green-200' 
+                                            : 'bg-white text-primary border border-primary/20 hover:bg-primary/5'
+                                    }`}
+                                    title="Add this customer to your database"
+                                >
+                                    {syncSuccess ? (
+                                        <>
+                                            <Check size={14} /> Synced
+                                        </>
+                                    ) : (
+                                        <>
+                                            <UserPlus size={14} /> 
+                                            {isSyncing ? 'Syncing...' : 'Sync Customer'}
+                                        </>
+                                    )}
+                                </button>
                             </div>
+                        )}
+
+                        <div className="flex items-center gap-3 mb-3">
+                            {order.customer.socialLink ? (
+                                <a 
+                                    href={order.customer.socialLink}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="w-10 h-10 rounded-full bg-white border border-gray-200 flex items-center justify-center text-primary shadow-sm hover:bg-gray-50 transition-colors cursor-pointer"
+                                    title="Open Social Link"
+                                >
+                                    <User size={20} />
+                                </a>
+                            ) : (
+                                <div className="w-10 h-10 rounded-full bg-white border border-gray-200 flex items-center justify-center text-primary shadow-sm">
+                                    <User size={20} />
+                                </div>
+                            )}
                             <div>
-                                <div className="font-bold text-gray-900">{order.customer.name}</div>
-                                <div className="text-sm text-gray-500 flex items-center gap-1">
+                                <div className="flex items-center gap-2">
+                                    <div 
+                                        className="font-bold text-gray-900 cursor-pointer hover:text-primary active:scale-95 transition-transform origin-left"
+                                        onClick={() => copyToClipboard(order.customer.name)}
+                                        title="Click to copy name"
+                                    >
+                                        {order.customer.name}
+                                    </div>
+                                    {order.customer.socialLink && (
+                                        <a
+                                            href={order.customer.socialLink}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="text-gray-400 hover:text-primary transition-colors"
+                                            title="Open Social Link"
+                                            onClick={(e) => e.stopPropagation()}
+                                        >
+                                            {order.customer.socialLink.includes('facebook') || order.customer.socialLink.includes('fb.com') ? (
+                                                <Facebook size={16} />
+                                            ) : order.customer.socialLink.includes('instagram') ? (
+                                                <Instagram size={16} />
+                                            ) : (
+                                                <Globe size={16} />
+                                            )}
+                                        </a>
+                                    )}
+                                </div>
+                                <div 
+                                    className="text-sm text-gray-500 flex items-center gap-1 cursor-pointer hover:text-primary active:scale-95 transition-transform origin-left"
+                                    onClick={() => copyToClipboard(order.customer.phone)}
+                                    title="Click to copy phone"
+                                >
                                     <Phone size={12} /> {order.customer.phone}
                                 </div>
                             </div>
                         </div>
-                        <div className="text-sm text-gray-600 flex items-start gap-2 pl-1">
+                        <div 
+                            className="text-sm text-gray-600 flex items-start gap-2 pl-1 cursor-pointer hover:text-primary active:scale-95 transition-transform origin-left"
+                            onClick={() => copyToClipboard(order.customer.address)}
+                            title="Click to copy address"
+                        >
                             <MapPin size={14} className="mt-0.5 text-gray-400 flex-shrink-0" />
                             <span>{order.customer.address}</span>
                         </div>
