@@ -46,7 +46,7 @@ const Orders = () => {
     const [searchQuery, setSearchQuery] = useState('');
     const [activeStatusId, setActiveStatusId] = useState(null);
     const [editingOrder, setEditingOrder] = useState(null);
-    
+
     // Drafts State
     const [drafts, setDrafts] = useState([]);
     const [isDraftModalOpen, setIsDraftModalOpen] = useState(false);
@@ -91,7 +91,7 @@ const Orders = () => {
         // Check if customer exists (normalize phone for comparison)
         const normalizePhone = (p) => p.replace(/\D/g, '');
         const newPhoneNormalized = normalizePhone(newOrder.customer.phone);
-        
+
         const customerExists = customers.some(c => normalizePhone(c.phone) === newPhoneNormalized);
 
         if (!customerExists) {
@@ -212,7 +212,7 @@ const Orders = () => {
         if (advancedFilters.isPickupOnly) {
             result = result.filter(order => {
                 const address = (order.customer.address || '').toLowerCase();
-                return address.includes('pickup') || address.includes('bookship');
+                return address.includes('pickup') || address.includes('pick up') || address.includes('bookship');
             });
         }
 
@@ -376,9 +376,8 @@ const Orders = () => {
                     </div>
                     <div className="flex items-center gap-3">
                         <label className="flex items-center gap-2 cursor-pointer mr-4">
-                            <div className={`w-4 h-4 rounded border flex items-center justify-center transition-colors ${
-                                advancedFilters.isPickupOnly ? 'bg-primary border-primary' : 'border-gray-300'
-                            }`}>
+                            <div className={`w-4 h-4 rounded border flex items-center justify-center transition-colors ${advancedFilters.isPickupOnly ? 'bg-primary border-primary' : 'border-gray-300'
+                                }`}>
                                 {advancedFilters.isPickupOnly && <CheckCircle2 size={12} className="text-white" />}
                             </div>
                             <input
@@ -437,11 +436,10 @@ const Orders = () => {
                                     <tr
                                         key={order.id}
                                         onClick={() => handleOpenDetails(order)}
-                                        className={`transition-colors group cursor-pointer ${
-                                            selectedOrderForDetails?.id === order.id 
-                                            ? 'bg-blue-50 hover:bg-blue-100' 
-                                            : 'hover:bg-gray-50'
-                                        }`}
+                                        className={`transition-colors group cursor-pointer ${selectedOrderForDetails?.id === order.id
+                                                ? 'bg-blue-50 hover:bg-blue-100'
+                                                : 'hover:bg-gray-50'
+                                            }`}
                                     >
                                         {/* Customer Info */}
                                         <td className="px-4 py-4">
@@ -542,20 +540,19 @@ const Orders = () => {
                                                             <XCircle size={18} />
                                                     }
                                                 </button>
-                                                
+
                                                 {/* Status Dropdown for Pending */}
                                                 {activeStatusId === order.id && (
                                                     <>
-                                                        <div 
-                                                            className="fixed inset-0 z-10" 
+                                                        <div
+                                                            className="fixed inset-0 z-10"
                                                             onClick={(e) => {
                                                                 e.stopPropagation();
                                                                 setActiveStatusId(null);
                                                             }}
                                                         ></div>
-                                                        <div className={`absolute right-0 w-40 bg-white rounded-lg shadow-xl border border-gray-100 z-20 overflow-hidden animate-in fade-in zoom-in-95 duration-200 ${
-                                                            index === filteredAndSortedOrders.length - 1 ? 'bottom-full mb-2' : 'top-full mt-2'
-                                                        }`}>
+                                                        <div className={`absolute right-0 w-40 bg-white rounded-lg shadow-xl border border-gray-100 z-20 overflow-hidden animate-in fade-in zoom-in-95 duration-200 ${index === filteredAndSortedOrders.length - 1 ? 'bottom-full mb-2' : 'top-full mt-2'
+                                                            }`}>
                                                             <button
                                                                 onClick={(e) => {
                                                                     e.stopPropagation();
@@ -600,7 +597,7 @@ const Orders = () => {
                     </table>
                 </div>
 
-                
+
                 {/* Daily Summary Footer */}
                 <div className="bg-gray-50 border-t border-gray-200 px-6 py-3 flex justify-between items-center text-xs text-gray-500">
                     <div className="flex gap-4">

@@ -79,7 +79,7 @@ export const DataProvider = ({ children }) => {
                         customer: {
                             name: orderData.customer?.name || 'Unknown',
                             phone: orderData.customer?.phone || orderData.customerPhone || 'N/A',
-                            address: orderData.address || 'N/A',
+                            address: orderData.address || orderData.customer?.address || 'N/A',
                             socialLink: orderData.customer?.socialLink || ''
                         },
                         items: items,

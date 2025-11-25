@@ -7,6 +7,9 @@ export default {
   theme: {
     extend: {
       colors: {
+        'bakery-bg': '#FFFBF2',
+        'bakery-accent': '#E89F45',
+        'bakery-text': '#4A3B32',
         primary: {
           DEFAULT: '#0F5132', // A nice bakery green
           light: '#198754',

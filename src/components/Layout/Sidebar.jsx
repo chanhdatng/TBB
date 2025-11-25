@@ -1,10 +1,12 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, ShoppingBag, Users, BarChart3, Settings, LogOut, X, Package, ClipboardList } from 'lucide-react';
+import { LayoutDashboard, ShoppingBag, Users, BarChart3, Settings, LogOut, X, Package, ClipboardList, Database } from 'lucide-react';
 import { useData } from '../../contexts/DataContext';
+import { useAuth } from '../../contexts/AuthContext';
 
 const Sidebar = ({ isOpen, onClose }) => {
     const { orders } = useData();
+    const { logout } = useAuth();
 
     // Calculate pending orders for today
     const pendingOrdersCount = orders.filter(order => {
@@ -22,6 +24,7 @@ const Sidebar = ({ isOpen, onClose }) => {
         { icon: ClipboardList, label: 'Pre-Orders', path: '/pre-orders', badge: '4' },
         { icon: Package, label: 'Products', path: '/products' },
         { icon: Users, label: 'Customers', path: '/customers' },
+        { icon: Database, label: 'Data Sync', path: '/data-sync' },
         { icon: BarChart3, label: 'Analytics', path: '/analytics' },
         { icon: Settings, label: 'Settings', path: '/settings' },
     ];
@@ -102,7 +105,7 @@ const Sidebar = ({ isOpen, onClose }) => {
                                 <Settings size={20} />
                                 <span className="font-medium">Settings</span>
                             </NavLink>
-                            <button className="w-full flex items-center gap-3 px-4 py-3 text-red-600 hover:bg-red-50 rounded-xl transition-colors">
+                            <button onClick={logout} className="w-full flex items-center gap-3 px-4 py-3 text-red-600 hover:bg-red-50 rounded-xl transition-colors">
                                 <LogOut size={20} />
                                 <span className="font-medium">Log out</span>
                             </button>

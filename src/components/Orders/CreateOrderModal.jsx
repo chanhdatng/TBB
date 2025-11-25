@@ -13,14 +13,14 @@ const CreateOrderModal = ({ isOpen, onClose, onCreateOrder, editingOrder, onUpda
     // Form State
     const initialCustomer = { name: '', phone: '', address: '', socialLink: '' };
     const initialItems = [{ id: Date.now(), name: '', quantity: 1, price: 0 }];
-    const initialFees = { ship: 0, other: 0, discount: 0, note: '' };
+    const initialFees = { ship: 0, discount: 0, other: 0, note: '' };
 
     const [customer, setCustomer] = useState(initialCustomer);
     const [items, setItems] = useState(initialItems);
     const [fees, setFees] = useState(initialFees);
     const [showConfirm, setShowConfirm] = useState(false);
     const [activeSearchId, setActiveSearchId] = useState(null);
-    
+
     // Date & Time State
     const [orderDate, setOrderDate] = useState(new Date().toISOString().split('T')[0]);
     const [orderTime, setOrderTime] = useState(new Date().toTimeString().slice(0, 5));
@@ -43,7 +43,7 @@ const CreateOrderModal = ({ isOpen, onClose, onCreateOrder, editingOrder, onUpda
         if (isOpen) {
             setShowValidation(false);
             setIsShake(false);
-            
+
             if (editingOrder) {
                 // Populate form with existing order data
                 setCustomer({
@@ -65,8 +65,9 @@ const CreateOrderModal = ({ isOpen, onClose, onCreateOrder, editingOrder, onUpda
                 // Map fees
                 setFees({
                     ship: editingOrder.originalData?.shipFee || 0,
-                    other: editingOrder.originalData?.otherFee || 0,
+
                     discount: editingOrder.originalData?.discount || 0,
+                    other: editingOrder.originalData?.otherFee || 0,
                     note: editingOrder.originalData?.note || ''
                 });
 
@@ -75,7 +76,7 @@ const CreateOrderModal = ({ isOpen, onClose, onCreateOrder, editingOrder, onUpda
                 const dateObj = editingOrder.timeline.received.raw;
                 setOrderDate(dateObj.toLocaleDateString('en-CA')); // YYYY-MM-DD
                 setOrderTime(dateObj.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }));
-                
+
                 // Set time slot if available, otherwise try to match or leave empty
                 if (editingOrder.originalData?.deliveryTimeSlot) {
                     setDeliveryTimeSlot(editingOrder.originalData.deliveryTimeSlot);
@@ -113,18 +114,18 @@ const CreateOrderModal = ({ isOpen, onClose, onCreateOrder, editingOrder, onUpda
             orderDate,
             deliveryTimeSlot
         };
-        
+
         // Get existing drafts
         const existingDrafts = JSON.parse(localStorage.getItem('order_drafts') || '[]');
-        
+
         // If we are editing a draft (initialData exists), we might want to update it instead of creating new?
         // For simplicity, let's just add new one for now, or replace if ID matches.
         // But initialData might not have ID if it was just passed as props. 
         // Let's just append for now to be safe.
-        
+
         const newDrafts = [draftData, ...existingDrafts];
         localStorage.setItem('order_drafts', JSON.stringify(newDrafts));
-        
+
         if (onDraftSaved) onDraftSaved();
         alert("Đã lưu nháp thành công!");
         onClose();
@@ -161,12 +162,12 @@ const CreateOrderModal = ({ isOpen, onClose, onCreateOrder, editingOrder, onUpda
 
     const calculateTotal = () => {
         const itemsTotal = items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-        return itemsTotal + Number(fees.ship) + Number(fees.other) - Number(fees.discount);
+        return itemsTotal + Number(fees.ship) - Number(fees.discount);
     };
 
     const isDirty = () => {
         // Simplified dirty check for now, or implement deep comparison if critical
-        return false; 
+        return false;
     };
 
     const handleCloseAttempt = () => {
@@ -194,7 +195,7 @@ const CreateOrderModal = ({ isOpen, onClose, onCreateOrder, editingOrder, onUpda
 
     // Helper: Generate UUID for customer (if needed)
     const generateUUID = () => {
-        return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+        return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
             var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
             return v.toString(16);
         }).toUpperCase();
@@ -204,7 +205,7 @@ const CreateOrderModal = ({ isOpen, onClose, onCreateOrder, editingOrder, onUpda
         e.preventDefault();
 
         const validItems = items.filter(item => item.name && item.name.trim() !== '');
-        
+
         // Validation
         if (!deliveryTimeSlot || validItems.length === 0) {
             setShowValidation(true);
@@ -214,7 +215,7 @@ const CreateOrderModal = ({ isOpen, onClose, onCreateOrder, editingOrder, onUpda
         }
 
         const now = new Date();
-        
+
         // Determine time to use: either start of slot or manual time (if we kept manual time as fallback, but here we enforce slots mostly)
         // If a slot is selected, use the start time of the slot for the timestamp
         let finalTime = orderTime;
@@ -272,14 +273,14 @@ const CreateOrderModal = ({ isOpen, onClose, onCreateOrder, editingOrder, onUpda
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm transition-opacity duration-300" onClick={handleCloseAttempt}>
-            <div className="bg-white rounded-2xl w-full max-w-2xl shadow-xl animate-in fade-in zoom-in-95 duration-300 ease-out max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            <div className="bg-white rounded-2xl w-full max-w-2xl lg:max-w-6xl shadow-xl animate-in fade-in zoom-in-95 duration-300 ease-out max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
 
                 {/* Header */}
                 <div className="flex items-center justify-between p-6 border-b border-gray-100 sticky top-0 bg-white z-10">
                     <h2 className="text-xl font-bold text-gray-900">{editingOrder ? 'Edit Order' : 'Create New Order'}</h2>
                     <div className="flex items-center gap-2">
                         {!editingOrder && (
-                            <button 
+                            <button
                                 onClick={handleSaveDraft}
                                 className="text-primary hover:bg-primary/10 p-2 rounded-lg transition-colors flex items-center gap-1 text-sm font-medium"
                                 title="Save Draft"
@@ -294,270 +295,305 @@ const CreateOrderModal = ({ isOpen, onClose, onCreateOrder, editingOrder, onUpda
                     </div>
                 </div>
 
-                <form onSubmit={handleSubmit} className="p-6 space-y-8">
+                <form onSubmit={handleSubmit} className="p-6 space-y-8 lg:space-y-0 lg:grid lg:grid-cols-12 lg:gap-8">
 
-                    {/* Section 1: Customer */}
-                    <div className="space-y-4">
-                        <div className="flex items-center gap-2 text-primary font-bold border-b border-gray-100 pb-2">
-                            <User size={20} />
-                            <h3>Customer Details</h3>
-                        </div>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
-                                <input
-                                    type="text"
-                                    required
-                                    value={customer.name}
-                                    onChange={(e) => setCustomer({ ...customer, name: e.target.value })}
-                                    className="w-full px-4 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20"
-                                    placeholder="Customer Name"
-                                />
+                    {/* Left Column: Customer & Items */}
+                    <div className="lg:col-span-8 space-y-8">
+                        {/* Section 1: Customer */}
+                        <div className="space-y-4">
+                            <div className="flex items-center gap-2 text-primary font-bold border-b border-gray-100 pb-2">
+                                <User size={20} />
+                                <h3>Customer Details</h3>
                             </div>
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
-                                <div className="relative">
-                                    <Phone size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                                    <input
-                                        type="tel"
-                                        required
-                                        value={customer.phone}
-                                        onChange={(e) => {
-                                            const newPhone = e.target.value;
-                                            const foundCustomer = customers.find(c => c.phone === newPhone);
-                                            setCustomer({
-                                                ...customer,
-                                                phone: newPhone,
-                                                name: foundCustomer ? foundCustomer.name : customer.name,
-                                                address: foundCustomer ? foundCustomer.address : customer.address,
-                                                socialLink: foundCustomer ? (foundCustomer.socialLink || '') : customer.socialLink,
-                                                id: foundCustomer ? foundCustomer.id : null
-                                            });
-                                        }}
-                                        className="w-full pl-10 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20"
-                                        placeholder="Phone Number"
-                                    />
-                                </div>
-                            </div>
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">Address</label>
-                                <div className="relative">
-                                    <MapPin size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
                                     <input
                                         type="text"
                                         required
-                                        value={customer.address}
-                                        onChange={(e) => setCustomer({ ...customer, address: e.target.value })}
-                                        className="w-full pl-10 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20"
-                                        placeholder="Delivery Address"
+                                        value={customer.name}
+                                        onChange={(e) => setCustomer({ ...customer, name: e.target.value })}
+                                        className="w-full px-4 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20"
+                                        placeholder="Customer Name"
                                     />
                                 </div>
-                            </div>
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">Social Link <span className="text-gray-400 font-normal">(Optional)</span></label>
-                                <div className="relative">
-                                    <Globe size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                                    <input
-                                        type="text"
-                                        value={customer.socialLink}
-                                        onChange={(e) => setCustomer({ ...customer, socialLink: e.target.value })}
-                                        className="w-full pl-10 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20"
-                                        placeholder="Facebook/Instagram URL"
-                                    />
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
+                                    <div className="relative">
+                                        <Phone size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                                        <input
+                                            type="tel"
+                                            required
+                                            value={customer.phone}
+                                            onChange={(e) => {
+                                                const newPhone = e.target.value;
+                                                const foundCustomer = customers.find(c => c.phone === newPhone);
+                                                setCustomer({
+                                                    ...customer,
+                                                    phone: newPhone,
+                                                    name: foundCustomer ? foundCustomer.name : customer.name,
+                                                    address: foundCustomer ? foundCustomer.address : customer.address,
+                                                    socialLink: foundCustomer ? (foundCustomer.socialLink || '') : customer.socialLink,
+                                                    id: foundCustomer ? foundCustomer.id : null
+                                                });
+                                            }}
+                                            className="w-full pl-10 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20"
+                                            placeholder="Phone Number"
+                                        />
+                                    </div>
                                 </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* Section 2: Items */}
-                    <div className="space-y-4">
-                        <div className="flex items-center justify-between border-b border-gray-100 pb-2">
-                            <div className="flex items-center gap-2 text-primary font-bold">
-                                <ShoppingBag size={20} />
-                                <h3>Order Items</h3>
-                            </div>
-                            <button
-                                type="button"
-                                onClick={handleAddItem}
-                                className="text-sm text-primary font-medium hover:bg-primary/10 px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1"
-                            >
-                                <Plus size={16} /> Add Item
-                            </button>
-                        </div>
-
-                        <div className={`space-y-3 p-2 rounded-xl transition-all ${showValidation && items.every(i => !i.name) ? 'border-2 border-red-500 bg-red-50' : ''} ${isShake && items.every(i => !i.name) ? 'animate-shake' : ''}`}>
-                            {items.map((item, index) => (
-                                <div key={item.id} className="flex flex-col md:flex-row gap-3 items-start md:items-center bg-gray-50 p-3 rounded-xl border border-gray-100">
-                                    <div className="flex-1 w-full relative">
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Address</label>
+                                    <div className="relative">
+                                        <MapPin size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
                                         <input
                                             type="text"
-                                            value={item.name}
-                                            onChange={(e) => handleItemChange(item.id, 'name', e.target.value)}
-                                            onFocus={() => setActiveSearchId(item.id)}
-                                            onBlur={() => setTimeout(() => setActiveSearchId(null), 200)}
-                                            className={`w-full px-3 py-2 bg-white border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 text-sm ${showValidation && !item.name ? 'border-red-500' : 'border-gray-200'}`}
-                                            placeholder="Select or type cake name"
+                                            required
+                                            value={customer.address}
+                                            onChange={(e) => setCustomer({ ...customer, address: e.target.value })}
+                                            className="w-full pl-10 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20"
+                                            placeholder="Delivery Address"
                                         />
-                                        {activeSearchId === item.id && (
-                                            <div className="absolute z-50 w-full mt-1 bg-white border border-gray-100 rounded-lg shadow-lg max-h-60 overflow-y-auto">
-                                                {displayProducts
-                                                    .filter(p => p.name.toLowerCase().includes((item.name || '').toLowerCase()))
-                                                    .map(p => (
-                                                        <div
-                                                            key={p.id || p.name}
-                                                            className="px-3 py-2 hover:bg-gray-50 cursor-pointer text-sm flex justify-between items-center"
-                                                            onMouseDown={() => {
-                                                                handleItemChange(item.id, 'name', p.name);
-                                                                setActiveSearchId(null);
-                                                            }}
-                                                        >
-                                                            <span className="font-medium text-gray-900">{p.name}</span>
-                                                            <span className="text-gray-500 text-xs">
-                                                                {new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(p.price)}
-                                                            </span>
-                                                        </div>
-                                                    ))
-                                                }
-                                                {displayProducts.filter(p => p.name.toLowerCase().includes((item.name || '').toLowerCase())).length === 0 && (
-                                                    <div className="px-3 py-2 text-sm text-gray-500 text-center">No items found</div>
-                                                )}
-                                            </div>
-                                        )}
                                     </div>
-                                    <div className="flex items-center gap-3 w-full md:w-auto">
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Social Link <span className="text-gray-400 font-normal">(Optional)</span></label>
+                                    <div className="relative">
+                                        <Globe size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
                                         <input
-                                            type="number"
-                                            min="1"
-                                            value={item.quantity}
-                                            onChange={(e) => handleItemChange(item.id, 'quantity', parseInt(e.target.value) || 1)}
-                                            className="w-20 px-3 py-2 bg-white border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 text-sm"
+                                            type="text"
+                                            value={customer.socialLink}
+                                            onChange={(e) => setCustomer({ ...customer, socialLink: e.target.value })}
+                                            className="w-full pl-10 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20"
+                                            placeholder="Facebook/Instagram URL"
                                         />
-                                        <div className="w-32">
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Section 2: Items */}
+                        <div className="space-y-4">
+                            <div className="flex items-center justify-between border-b border-gray-100 pb-2">
+                                <div className="flex items-center gap-2 text-primary font-bold">
+                                    <ShoppingBag size={20} />
+                                    <h3>Order Items</h3>
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={handleAddItem}
+                                    className="text-sm text-primary font-medium hover:bg-primary/10 px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1"
+                                >
+                                    <Plus size={16} /> Add Item
+                                </button>
+                            </div>
+
+                            <div className={`space-y-3 p-2 rounded-xl transition-all lg:max-h-[400px] lg:overflow-y-auto lg:custom-scrollbar ${showValidation && items.every(i => !i.name) ? 'border-2 border-red-500 bg-red-50' : ''} ${isShake && items.every(i => !i.name) ? 'animate-shake' : ''}`}>
+                                {items.map((item, index) => (
+                                    <div key={item.id} className="flex flex-col md:flex-row gap-3 items-start md:items-center bg-gray-50 p-3 rounded-xl border border-gray-100">
+                                        <div className="flex-1 w-full relative">
                                             <input
-                                                type="number"
-                                                min="0"
-                                                value={item.price}
-                                                onChange={(e) => handleItemChange(item.id, 'price', Number(e.target.value))}
-                                                className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 text-sm text-right"
+                                                type="text"
+                                                value={item.name}
+                                                onChange={(e) => handleItemChange(item.id, 'name', e.target.value)}
+                                                onFocus={() => setActiveSearchId(item.id)}
+                                                onBlur={() => setTimeout(() => setActiveSearchId(null), 200)}
+                                                className={`w-full px-3 py-2 bg-white border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 text-sm ${showValidation && !item.name ? 'border-red-500' : 'border-gray-200'}`}
+                                                placeholder="Select or type cake name"
+                                            />
+                                            {activeSearchId === item.id && (
+                                                <div className="absolute z-50 w-full mt-1 bg-white border border-gray-100 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                                                    {displayProducts
+                                                        .filter(p => p.name.toLowerCase().includes((item.name || '').toLowerCase()))
+                                                        .map(p => (
+                                                            <div
+                                                                key={p.id || p.name}
+                                                                className="px-3 py-2 hover:bg-gray-50 cursor-pointer text-sm flex justify-between items-center"
+                                                                onMouseDown={() => {
+                                                                    handleItemChange(item.id, 'name', p.name);
+                                                                    setActiveSearchId(null);
+                                                                }}
+                                                            >
+                                                                <span className="font-medium text-gray-900">{p.name}</span>
+                                                                <span className="text-gray-500 text-xs">
+                                                                    {new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(p.price)}
+                                                                </span>
+                                                            </div>
+                                                        ))
+                                                    }
+                                                    {displayProducts.filter(p => p.name.toLowerCase().includes((item.name || '').toLowerCase())).length === 0 && (
+                                                        <div className="px-3 py-2 text-sm text-gray-500 text-center">No items found</div>
+                                                    )}
+                                                </div>
+                                            )}
+                                        </div>
+                                        <div className="flex items-center gap-3 w-full md:w-auto">
+                                            <div className="flex items-center border border-gray-200 rounded-lg bg-white">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        const currentVal = parseInt(item.quantity) || 0;
+                                                        if (currentVal > 1) {
+                                                            handleItemChange(item.id, 'quantity', currentVal - 1);
+                                                        }
+                                                    }}
+                                                    className="px-3 py-2 text-gray-500 hover:bg-gray-50 hover:text-primary transition-colors border-r border-gray-200"
+                                                >
+                                                    -
+                                                </button>
+                                                <input
+                                                    type="text"
+                                                    inputMode="numeric"
+                                                    pattern="[0-9]*"
+                                                    value={item.quantity}
+                                                    onChange={(e) => {
+                                                        const val = e.target.value;
+                                                        if (val === '') {
+                                                            handleItemChange(item.id, 'quantity', '');
+                                                        } else {
+                                                            const num = parseInt(val);
+                                                            if (!isNaN(num) && num > 0) {
+                                                                handleItemChange(item.id, 'quantity', num);
+                                                            }
+                                                        }
+                                                    }}
+                                                    onBlur={() => {
+                                                        if (!item.quantity || parseInt(item.quantity) < 1) {
+                                                            handleItemChange(item.id, 'quantity', 1);
+                                                        }
+                                                    }}
+                                                    className="w-12 py-2 text-center focus:outline-none text-sm font-medium"
+                                                />
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        const currentVal = parseInt(item.quantity) || 0;
+                                                        handleItemChange(item.id, 'quantity', currentVal + 1);
+                                                    }}
+                                                    className="px-3 py-2 text-gray-500 hover:bg-gray-50 hover:text-primary transition-colors border-l border-gray-200"
+                                                >
+                                                    +
+                                                </button>
+                                            </div>
+                                            <div className="w-32">
+                                                <input
+                                                    type="number"
+                                                    min="0"
+                                                    value={item.price}
+                                                    onChange={(e) => handleItemChange(item.id, 'price', Number(e.target.value))}
+                                                    className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 text-sm text-right"
+                                                />
+                                            </div>
+                                            <button
+                                                type="button"
+                                                onClick={() => handleRemoveItem(item.id)}
+                                                className={`p-2 rounded-lg transition-colors ${items.length > 1 ? 'text-red-400 hover:text-red-600 hover:bg-red-50' : 'text-gray-300 cursor-not-allowed'}`}
+                                                disabled={items.length <= 1}
+                                            >
+                                                <Trash2 size={18} />
+                                            </button>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Right Column: Fees & Total & Action */}
+                    <div className="lg:col-span-4 space-y-8 lg:space-y-6">
+                        {/* Section 3: Fees & Total */}
+                        <div className="space-y-4">
+                            <div className="flex items-center gap-2 text-primary font-bold border-b border-gray-100 pb-2">
+                                <Receipt size={20} />
+                                <h3>Payment & Notes</h3>
+                            </div>
+
+                            <div className="space-y-6">
+                                <div className="space-y-3">
+                                    {/* Date & Time Selection */}
+                                    <div className="space-y-3">
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 mb-1">Date</label>
+                                            <input
+                                                type="date"
+                                                required
+                                                value={orderDate}
+                                                onChange={(e) => setOrderDate(e.target.value)}
+                                                className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 text-sm"
                                             />
                                         </div>
-                                        <button
-                                            type="button"
-                                            onClick={() => handleRemoveItem(item.id)}
-                                            className={`p-2 rounded-lg transition-colors ${items.length > 1 ? 'text-red-400 hover:text-red-600 hover:bg-red-50' : 'text-gray-300 cursor-not-allowed'}`}
-                                            disabled={items.length <= 1}
-                                        >
-                                            <Trash2 size={18} />
-                                        </button>
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-
-                    {/* Section 3: Fees & Total */}
-                    <div className="space-y-4">
-                        <div className="flex items-center gap-2 text-primary font-bold border-b border-gray-100 pb-2">
-                            <Receipt size={20} />
-                            <h3>Payment & Notes</h3>
-                        </div>
-
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                            <div className="space-y-3">
-                                {/* Date & Time Selection */}
-                                <div className="space-y-3">
-                                    <div>
-                                        <label className="block text-sm font-medium text-gray-700 mb-1">Date</label>
-                                        <input
-                                            type="date"
-                                            required
-                                            value={orderDate}
-                                            onChange={(e) => setOrderDate(e.target.value)}
-                                            className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 text-sm"
-                                        />
-                                    </div>
-                                    <div>
-                                        <label className="block text-sm font-medium text-gray-700 mb-2">Time Slot</label>
-                                        <div className={`grid grid-cols-2 sm:grid-cols-3 gap-2 p-2 rounded-lg transition-all ${showValidation && !deliveryTimeSlot ? 'border-2 border-red-500 bg-red-50' : ''} ${isShake && !deliveryTimeSlot ? 'animate-shake' : ''}`}>
-                                            {TIME_SLOTS.map(slot => (
-                                                <button
-                                                    key={slot}
-                                                    type="button"
-                                                    onClick={() => setDeliveryTimeSlot(slot)}
-                                                    className={`px-2 py-2 text-xs font-medium rounded-lg border transition-all ${
-                                                        deliveryTimeSlot === slot
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 mb-2">Time Slot</label>
+                                            <div className={`grid grid-cols-3 gap-1.5 p-1.5 rounded-lg transition-all ${showValidation && !deliveryTimeSlot ? 'border-2 border-red-500 bg-red-50' : ''} ${isShake && !deliveryTimeSlot ? 'animate-shake' : ''}`}>
+                                                {TIME_SLOTS.map(slot => (
+                                                    <button
+                                                        key={slot}
+                                                        type="button"
+                                                        onClick={() => setDeliveryTimeSlot(slot)}
+                                                        className={`px-1 py-1.5 text-[10px] sm:text-xs font-medium rounded-md border transition-all ${deliveryTimeSlot === slot
                                                             ? 'bg-primary text-white border-primary shadow-sm'
                                                             : 'bg-white text-gray-600 border-gray-200 hover:border-primary/50 hover:bg-primary/5'
-                                                    }`}
-                                                >
-                                                    {slot}
-                                                </button>
-                                            ))}
+                                                            }`}
+                                                    >
+                                                        {slot}
+                                                    </button>
+                                                ))}
+                                            </div>
                                         </div>
+                                    </div>
+
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">Note</label>
+                                        <textarea
+                                            rows="2"
+                                            value={fees.note}
+                                            onChange={(e) => setFees({ ...fees, note: e.target.value })}
+                                            className="w-full px-4 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 resize-none"
+                                            placeholder="Order notes..."
+                                        />
                                     </div>
                                 </div>
 
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">Note</label>
-                                    <textarea
-                                        rows="4"
-                                        value={fees.note}
-                                        onChange={(e) => setFees({ ...fees, note: e.target.value })}
-                                        className="w-full px-4 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 resize-none"
-                                        placeholder="Order notes..."
-                                    />
-                                </div>
-                            </div>
-
-                            <div className="space-y-3 bg-gray-50 p-4 rounded-xl">
-                                <div className="flex items-center justify-between">
-                                    <label className="text-sm text-gray-600">Ship Fee</label>
-                                    <input
-                                        type="number"
-                                        min="0"
-                                        value={fees.ship}
-                                        onChange={(e) => setFees({ ...fees, ship: e.target.value })}
-                                        className="w-32 px-2 py-1 bg-white border border-gray-200 rounded text-right text-sm focus:outline-none focus:border-primary"
-                                    />
-                                </div>
-                                <div className="flex items-center justify-between">
-                                    <label className="text-sm text-gray-600">Other Fee</label>
-                                    <input
-                                        type="number"
-                                        min="0"
-                                        value={fees.other}
-                                        onChange={(e) => setFees({ ...fees, other: e.target.value })}
-                                        className="w-32 px-2 py-1 bg-white border border-gray-200 rounded text-right text-sm focus:outline-none focus:border-primary"
-                                    />
-                                </div>
-                                <div className="flex items-center justify-between">
-                                    <label className="text-sm text-gray-600">Discount</label>
-                                    <input
-                                        type="number"
-                                        min="0"
-                                        value={fees.discount}
-                                        onChange={(e) => setFees({ ...fees, discount: e.target.value })}
-                                        className="w-32 px-2 py-1 bg-white border border-gray-200 rounded text-right text-sm focus:outline-none focus:border-primary text-red-500"
-                                    />
-                                </div>
-                                <div className="border-t border-gray-200 pt-3 mt-3 flex items-center justify-between">
-                                    <span className="font-bold text-gray-900">Total</span>
-                                    <span className="font-bold text-xl text-primary">
-                                        {new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(calculateTotal())}
-                                    </span>
+                                <div className="space-y-3 bg-gray-50 p-4 rounded-xl">
+                                    <div className="flex items-center justify-between">
+                                        <label className="text-sm text-gray-600">Ship Fee</label>
+                                        <input
+                                            type="number"
+                                            min="0"
+                                            value={fees.ship}
+                                            onChange={(e) => setFees({ ...fees, ship: e.target.value })}
+                                            className="w-32 px-2 py-1 bg-white border border-gray-200 rounded text-right text-sm focus:outline-none focus:border-primary"
+                                        />
+                                    </div>
+                                    <div className="flex items-center justify-between">
+                                        <label className="text-sm text-gray-600">Discount</label>
+                                        <input
+                                            type="number"
+                                            min="0"
+                                            value={fees.discount}
+                                            onChange={(e) => setFees({ ...fees, discount: e.target.value })}
+                                            className="w-32 px-2 py-1 bg-white border border-gray-200 rounded text-right text-sm focus:outline-none focus:border-primary text-red-500"
+                                        />
+                                    </div>
+                                    <div className="border-t border-gray-200 pt-3 mt-3 flex items-center justify-between">
+                                        <span className="font-bold text-gray-900">Total</span>
+                                        <span className="font-bold text-xl text-primary">
+                                            {new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(calculateTotal())}
+                                        </span>
+                                    </div>
                                 </div>
                             </div>
                         </div>
-                    </div>
 
-                    <div className="pt-4 border-t border-gray-100">
-                        <button
-                            type="submit"
-                            className="w-full flex items-center justify-center gap-2 bg-primary hover:bg-primary-light text-white py-3 rounded-xl font-bold transition-all shadow-lg shadow-primary/30 hover:shadow-primary/40 active:scale-[0.98]"
-                        >
-                            <Plus size={20} />
-                            {editingOrder ? 'Update Order' : 'Create Order'}
-                        </button>
+                        <div className="pt-4 border-t border-gray-100 lg:border-t-0 lg:pt-0">
+                            <button
+                                type="submit"
+                                className="w-full flex items-center justify-center gap-2 bg-primary hover:bg-primary-light text-white py-3 rounded-xl font-bold transition-all shadow-lg shadow-primary/30 hover:shadow-primary/40 active:scale-[0.98]"
+                            >
+                                <Plus size={20} />
+                                {editingOrder ? 'Update Order' : 'Create Order'}
+                            </button>
+                        </div>
                     </div>
                 </form>
 
