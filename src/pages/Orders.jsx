@@ -10,6 +10,7 @@ import { database } from '../firebase';
 import { ref, set, update, remove } from "firebase/database";
 import { useData } from '../contexts/DataContext';
 import { copyToClipboard } from '../utils/clipboard';
+import { useToast } from '../contexts/ToastContext';
 
 const Orders = () => {
     // Helper to format date as YYYY-MM-DD in local time
@@ -26,6 +27,7 @@ const Orders = () => {
     };
 
     const { orders, customers } = useData();
+    const { showToast } = useToast();
     // Initialize with today's date in YYYY-MM-DD format (Local Time)
     const [selectedDate, setSelectedDate] = useState(formatLocalDate(new Date()));
     const [isModalOpen, setIsModalOpen] = useState(false);
@@ -73,10 +75,14 @@ const Orders = () => {
 
     const handleDeleteDraft = (id) => {
         if (window.confirm('Are you sure you want to delete this draft?')) {
-            const newDrafts = drafts.filter(d => d.id !== id);
-            setDrafts(newDrafts);
-            localStorage.setItem('order_drafts', JSON.stringify(newDrafts));
+            removeDraft(id);
         }
+    };
+
+    const removeDraft = (id) => {
+        const newDrafts = drafts.filter(d => d.id !== id);
+        setDrafts(newDrafts);
+        localStorage.setItem('order_drafts', JSON.stringify(newDrafts));
     };
 
     const handleSelectDraft = (draft) => {
@@ -85,27 +91,68 @@ const Orders = () => {
         setIsModalOpen(true);
     };
 
-    const handleCreateOrder = (newOrder) => {
-        set(ref(database, 'orders/' + newOrder.id), newOrder);
+    const handleCreateOrder = async (newOrder) => {
+        // 1. Show loading on button (handled in Modal)
+        // 2. Wait a bit for visual feedback (handled here or in Modal? Let's do it here to simulate "background" start)
 
-        // Check if customer exists (normalize phone for comparison)
-        const normalizePhone = (p) => p.replace(/\D/g, '');
-        const newPhoneNormalized = normalizePhone(newOrder.customer.phone);
+        // We return a promise so the modal can await it for the "loading" state on button
+        return new Promise((resolve, reject) => {
+            // Simulate a small delay for the "loading" spinner on the button
+            setTimeout(async () => {
+                try {
+                    // Close modal first (handled by resolving, and Modal calls onClose)
+                    // Actually, Modal calls this, awaits, then closes. 
+                    // But we want "background" feel. 
+                    // So we resolve immediately after the small delay?
 
-        const customerExists = customers.some(c => normalizePhone(c.phone) === newPhoneNormalized);
+                    // If we resolve, the Modal closes.
+                    // Then we continue the work "in background".
+                    resolve();
 
-        if (!customerExists) {
-            console.log("Creating new customer:", newOrder.customer);
-            // Create new customer
-            const newCustomer = {
-                id: newOrder.customer.id,
-                name: newOrder.customer.name,
-                phone: newOrder.customer.phone,
-                address: newOrder.customer.address,
-                createDate: newOrder.createDate
-            };
-            set(ref(database, 'newCustomers/' + newCustomer.phone), newCustomer);
-        }
+                    // Background work starts here
+                    await set(ref(database, 'orders/' + newOrder.id), newOrder);
+
+                    // Check if customer exists (normalize phone for comparison)
+                    const normalizePhone = (p) => (p ? String(p).replace(/\D/g, '') : '');
+                    const newPhoneNormalized = normalizePhone(newOrder.customer.phone);
+
+                    const customerExists = customers.some(c => c && c.phone && normalizePhone(c.phone) === newPhoneNormalized);
+
+                    if (!customerExists) {
+                        console.log("Creating new customer:", newOrder.customer);
+                        // Create new customer
+                        const newCustomer = {
+                            id: newOrder.customer.id,
+                            name: newOrder.customer.name,
+                            phone: newOrder.customer.phone,
+                            address: newOrder.customer.address,
+                            createDate: newOrder.createDate,
+                            lastOrderId: newOrder.id // Set lastOrderId for new customer
+                        };
+                        await set(ref(database, 'newCustomers/' + newCustomer.phone), newCustomer);
+                    } else {
+                        // Update existing customer's lastOrderId
+                        const existingCustomer = customers.find(c => c && c.phone && normalizePhone(c.phone) === newPhoneNormalized);
+                        if (existingCustomer) {
+                            console.log("Updating existing customer lastOrderId:", existingCustomer.phone);
+                            await update(ref(database, 'newCustomers/' + existingCustomer.phone), {
+                                lastOrderId: newOrder.id
+                            });
+                        }
+                    }
+
+                    // Success Toast
+                    showToast('Tạo đơn thành công!', 'success');
+
+                } catch (error) {
+                    console.error("Error creating order:", error);
+                    showToast('Tạo đơn thất bại: ' + error.message, 'error');
+                    // Note: If we already resolved, the modal is closed. So the user sees the error toast on the main screen.
+                    // If we failed BEFORE resolving, we should reject so modal stays open?
+                    // But we want "background" feel. So usually we assume success for the UI close, then notify if fail.
+                }
+            }, 800); // 800ms delay for visual "processing" feedback
+        });
     };
 
     const handleUpdateOrder = (updatedOrder) => {
@@ -323,6 +370,7 @@ const Orders = () => {
                 onUpdateOrder={handleUpdateOrder}
                 initialData={selectedDraft}
                 onDraftSaved={handleDraftSaved}
+                onDeleteDraft={removeDraft}
             />
 
             <DraftListModal
@@ -437,8 +485,8 @@ const Orders = () => {
                                         key={order.id}
                                         onClick={() => handleOpenDetails(order)}
                                         className={`transition-colors group cursor-pointer ${selectedOrderForDetails?.id === order.id
-                                                ? 'bg-blue-50 hover:bg-blue-100'
-                                                : 'hover:bg-gray-50'
+                                            ? 'bg-blue-50 hover:bg-blue-100'
+                                            : 'hover:bg-gray-50'
                                             }`}
                                     >
                                         {/* Customer Info */}

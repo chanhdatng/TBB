@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { X, Plus, Trash2, AlertCircle, User, ShoppingBag, Receipt, MapPin, Phone, Save, Globe } from 'lucide-react';
+import { X, Plus, Trash2, AlertCircle, User, ShoppingBag, Receipt, MapPin, Phone, Save, Globe, Loader2 } from 'lucide-react';
 import { useData } from '../../contexts/DataContext';
 
-const CreateOrderModal = ({ isOpen, onClose, onCreateOrder, editingOrder, onUpdateOrder, initialData, onDraftSaved }) => {
+const CreateOrderModal = ({ isOpen, onClose, onCreateOrder, editingOrder, onUpdateOrder, initialData, onDraftSaved, onDeleteDraft }) => {
     const { products, customers } = useData();
 
     // Fallback if products are not loaded yet
@@ -37,12 +37,14 @@ const CreateOrderModal = ({ isOpen, onClose, onCreateOrder, editingOrder, onUpda
     // Validation State
     const [isShake, setIsShake] = useState(false);
     const [showValidation, setShowValidation] = useState(false);
+    const [isLoading, setIsLoading] = useState(false);
 
     // Reset form when modal opens
     useEffect(() => {
         if (isOpen) {
             setShowValidation(false);
             setIsShake(false);
+            setIsLoading(false);
 
             if (editingOrder) {
                 // Populate form with existing order data
@@ -201,7 +203,7 @@ const CreateOrderModal = ({ isOpen, onClose, onCreateOrder, editingOrder, onUpda
         }).toUpperCase();
     };
 
-    const handleSubmit = (e) => {
+    const handleSubmit = async (e) => {
         e.preventDefault();
 
         const validItems = items.filter(item => item.name && item.name.trim() !== '');
@@ -258,14 +260,57 @@ const CreateOrderModal = ({ isOpen, onClose, onCreateOrder, editingOrder, onUpda
 
         if (editingOrder) {
             onUpdateOrder(orderData);
+            onClose();
         } else {
-            onCreateOrder(orderData);
-            // If this was a draft (initialData exists), we should probably delete it?
-            // For now, let's leave it to the user to delete from the list, or we can pass a callback to delete it.
-            // But since we don't pass the draft ID back easily, let's keep it simple.
-            // The user can delete drafts manually from the list.
+            setIsLoading(true);
+            // Close modal immediately for "background" feel
+            // We pass the promise or handle it in parent, but here we just want to close and show loading on button briefly if needed
+            // But requirement says: "hiển thị loading ở nút và tự động tắt modal sau đó chạy ngầm"
+            // So: Show loading -> Wait a bit (optional) -> Close Modal -> Parent handles the rest (Toast)
+
+            // Actually, if we want to show loading on button, we can't close modal immediately.
+            // "hiển thị loading ở nút và tự động tắt modal" -> Show loading on button, THEN close modal.
+            // But if we close modal, the button is gone.
+            // So the flow is: User clicks -> Button shows loading -> (Async work starts) -> Modal closes -> (Async work finishes) -> Toast.
+
+            // To achieve "background" feel, we should just fire the onCreateOrder (which should be async or return promise) 
+            // and NOT await it here for the modal close, OR await it but the parent handles the "background" part.
+
+            // Let's do this:
+            // 1. Set loading
+            // 2. Call onCreateOrder (which we will make async in parent)
+            // 3. Wait for it? No, user wants "chạy ngầm" (run in background).
+            // So we should probably just call it, and close the modal. 
+            // BUT "hiển thị loading ở nút" implies we see it loading.
+            // Maybe show loading for 500ms then close?
+
+            try {
+                await onCreateOrder(orderData);
+
+                // If created from draft, delete the draft
+                if (initialData && onDeleteDraft) {
+                    onDeleteDraft(initialData.id);
+                }
+
+                onClose();
+                // The parent will handle the actual DB call and Toast. 
+                // If parent is async and we await it, the modal stays open until done.
+                // If we want "background", parent should return immediately or we don't await.
+
+                // Let's assume onCreateOrder in parent will handle the "backgrounding" logic (returning promise that resolves when done, or just fire and forget).
+                // But to show loading on button, we need to wait for SOMETHING.
+                // If we just want visual feedback:
+
+                // New plan based on "chạy ngầm":
+                // 1. setIsLoading(true)
+                // 2. await new Promise(r => setTimeout(r, 500)) // Fake loading for visual feedback
+                // 3. onClose()
+                // 4. onCreateOrder(orderData) // Fire and forget from modal's perspective, but parent handles the actual async work and Toast.
+            } catch (error) {
+                console.error("Error creating order:", error);
+                setIsLoading(false);
+            }
         }
-        onClose();
     };
 
     // Derived state for validation check (to style button)
@@ -588,10 +633,20 @@ const CreateOrderModal = ({ isOpen, onClose, onCreateOrder, editingOrder, onUpda
                         <div className="pt-4 border-t border-gray-100 lg:border-t-0 lg:pt-0">
                             <button
                                 type="submit"
-                                className="w-full flex items-center justify-center gap-2 bg-primary hover:bg-primary-light text-white py-3 rounded-xl font-bold transition-all shadow-lg shadow-primary/30 hover:shadow-primary/40 active:scale-[0.98]"
+                                disabled={isLoading}
+                                className="w-full flex items-center justify-center gap-2 bg-primary hover:bg-primary-light text-white py-3 rounded-xl font-bold transition-all shadow-lg shadow-primary/30 hover:shadow-primary/40 active:scale-[0.98] disabled:opacity-70 disabled:cursor-not-allowed"
                             >
-                                <Plus size={20} />
-                                {editingOrder ? 'Update Order' : 'Create Order'}
+                                {isLoading ? (
+                                    <>
+                                        <Loader2 size={20} className="animate-spin" />
+                                        Processing...
+                                    </>
+                                ) : (
+                                    <>
+                                        <Plus size={20} />
+                                        {editingOrder ? 'Update Order' : 'Create Order'}
+                                    </>
+                                )}
                             </button>
                         </div>
                     </div>

@@ -1,14 +1,16 @@
 import React, { useState } from 'react';
-import { X, CakeSlice, User, MapPin, Phone, Edit2, Trash2, Facebook, Instagram, Globe, UserPlus, Check } from 'lucide-react';
+import { X, CakeSlice, User, MapPin, Phone, Edit2, Trash2, Facebook, Instagram, Globe, UserPlus, Check, FileText } from 'lucide-react';
 import { copyToClipboard } from '../../utils/clipboard';
 import { useData } from '../../contexts/DataContext';
 import { ref, set } from "firebase/database";
 import { database } from '../../firebase';
+import InvoiceModal from './InvoiceModal';
 
 const OrderDetailsModal = ({ isOpen, onClose, order, onEdit, onDelete }) => {
     const { customers } = useData();
     const [isSyncing, setIsSyncing] = useState(false);
     const [syncSuccess, setSyncSuccess] = useState(false);
+    const [showInvoice, setShowInvoice] = useState(false);
 
     if (!isOpen || !order) return null;
 
@@ -27,9 +29,9 @@ const OrderDetailsModal = ({ isOpen, onClose, order, onEdit, onDelete }) => {
             // 1. Use phone number as the key
             // 2. Use existing ID if available
             // 3. Preserve createDate from original order if possible
-            
+
             const customerKey = order.customer.phone; // Use phone as key like in Orders.jsx
-            
+
             if (!customerKey) {
                 throw new Error("Customer phone is missing");
             }
@@ -40,13 +42,13 @@ const OrderDetailsModal = ({ isOpen, onClose, order, onEdit, onDelete }) => {
                 phone: order.customer.phone,
                 address: order.customer.address,
                 // Include socialLink as it's useful, even if Orders.jsx might miss it sometimes
-                socialLink: order.customer.socialLink || '', 
+                socialLink: order.customer.socialLink || '',
                 // Use original order createDate or current time
                 createDate: order.originalData?.createDate || Math.floor(Date.now() / 1000)
             };
 
             await set(ref(database, 'newCustomers/' + customerKey), customerData);
-            
+
             setSyncSuccess(true);
             setTimeout(() => setSyncSuccess(false), 3000);
         } catch (error) {
@@ -89,11 +91,10 @@ const OrderDetailsModal = ({ isOpen, onClose, order, onEdit, onDelete }) => {
                                 <button
                                     onClick={handleSyncCustomer}
                                     disabled={isSyncing || syncSuccess}
-                                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all shadow-sm ${
-                                        syncSuccess 
-                                            ? 'bg-green-100 text-green-700 border border-green-200' 
+                                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all shadow-sm ${syncSuccess
+                                            ? 'bg-green-100 text-green-700 border border-green-200'
                                             : 'bg-white text-primary border border-primary/20 hover:bg-primary/5'
-                                    }`}
+                                        }`}
                                     title="Add this customer to your database"
                                 >
                                     {syncSuccess ? (
@@ -102,7 +103,7 @@ const OrderDetailsModal = ({ isOpen, onClose, order, onEdit, onDelete }) => {
                                         </>
                                     ) : (
                                         <>
-                                            <UserPlus size={14} /> 
+                                            <UserPlus size={14} />
                                             {isSyncing ? 'Syncing...' : 'Sync Customer'}
                                         </>
                                     )}
@@ -112,7 +113,7 @@ const OrderDetailsModal = ({ isOpen, onClose, order, onEdit, onDelete }) => {
 
                         <div className="flex items-center gap-3 mb-3">
                             {order.customer.socialLink ? (
-                                <a 
+                                <a
                                     href={order.customer.socialLink}
                                     target="_blank"
                                     rel="noopener noreferrer"
@@ -128,7 +129,7 @@ const OrderDetailsModal = ({ isOpen, onClose, order, onEdit, onDelete }) => {
                             )}
                             <div>
                                 <div className="flex items-center gap-2">
-                                    <div 
+                                    <div
                                         className="font-bold text-gray-900 cursor-pointer hover:text-primary active:scale-95 transition-transform origin-left"
                                         onClick={() => copyToClipboard(order.customer.name)}
                                         title="Click to copy name"
@@ -154,7 +155,7 @@ const OrderDetailsModal = ({ isOpen, onClose, order, onEdit, onDelete }) => {
                                         </a>
                                     )}
                                 </div>
-                                <div 
+                                <div
                                     className="text-sm text-gray-500 flex items-center gap-1 cursor-pointer hover:text-primary active:scale-95 transition-transform origin-left"
                                     onClick={() => copyToClipboard(order.customer.phone)}
                                     title="Click to copy phone"
@@ -163,7 +164,7 @@ const OrderDetailsModal = ({ isOpen, onClose, order, onEdit, onDelete }) => {
                                 </div>
                             </div>
                         </div>
-                        <div 
+                        <div
                             className="text-sm text-gray-600 flex items-start gap-2 pl-1 cursor-pointer hover:text-primary active:scale-95 transition-transform origin-left"
                             onClick={() => copyToClipboard(order.customer.address)}
                             title="Click to copy address"
@@ -220,14 +221,20 @@ const OrderDetailsModal = ({ isOpen, onClose, order, onEdit, onDelete }) => {
                         <span className="text-xl font-bold text-primary">{order.price}</span>
                     </div>
                     <div className="flex gap-3">
-                        <button 
-                            onClick={onEdit} 
+                        <button
+                            onClick={() => setShowInvoice(true)}
+                            className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-blue-50 border border-blue-100 text-blue-600 font-medium hover:bg-blue-100 transition-colors"
+                        >
+                            <FileText size={18} /> Invoice
+                        </button>
+                        <button
+                            onClick={onEdit}
                             className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-white border border-gray-200 text-gray-700 font-medium hover:bg-gray-50 transition-colors"
                         >
                             <Edit2 size={18} /> Edit
                         </button>
-                        <button 
-                            onClick={onDelete} 
+                        <button
+                            onClick={onDelete}
                             className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-red-50 border border-red-100 text-red-600 font-medium hover:bg-red-100 transition-colors"
                         >
                             <Trash2 size={18} /> Delete
@@ -235,6 +242,12 @@ const OrderDetailsModal = ({ isOpen, onClose, order, onEdit, onDelete }) => {
                     </div>
                 </div>
             </div>
+
+            <InvoiceModal
+                isOpen={showInvoice}
+                onClose={() => setShowInvoice(false)}
+                order={order}
+            />
         </div>
     );
 };
