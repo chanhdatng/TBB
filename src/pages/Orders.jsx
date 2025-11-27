@@ -127,7 +127,8 @@ const Orders = () => {
                             phone: newOrder.customer.phone,
                             address: newOrder.customer.address,
                             createDate: newOrder.createDate,
-                            lastOrderId: newOrder.id // Set lastOrderId for new customer
+                            lastOrderId: newOrder.id, // Set lastOrderId for new customer
+                            socialLink: newOrder.customer.socialLink || ''
                         };
                         await set(ref(database, 'newCustomers/' + newCustomer.phone), newCustomer);
                     } else {
@@ -396,19 +397,21 @@ const Orders = () => {
                 ]}
             />
 
-            <OrderDetailsModal
-                isOpen={isDetailsModalOpen}
-                onClose={() => setIsDetailsModalOpen(false)}
-                order={selectedOrderForDetails}
-                onEdit={() => {
-                    handleEditOrder(selectedOrderForDetails.id);
-                    setIsDetailsModalOpen(false);
-                }}
-                onDelete={() => {
-                    handleDeleteOrder(selectedOrderForDetails.id);
-                    setIsDetailsModalOpen(false);
-                }}
-            />
+            {isDetailsModalOpen && (
+                <OrderDetailsModal
+                    isOpen={isDetailsModalOpen}
+                    onClose={() => setIsDetailsModalOpen(false)}
+                    order={selectedOrderForDetails}
+                    onEdit={() => {
+                        handleEditOrder(selectedOrderForDetails.id);
+                        setIsDetailsModalOpen(false);
+                    }}
+                    onDelete={() => {
+                        handleDeleteOrder(selectedOrderForDetails.id);
+                        setIsDetailsModalOpen(false);
+                    }}
+                />
+            )}
 
             <div className="bg-white rounded-2xl border border-gray-100 shadow-sm">
                 <div className="p-4 border-b border-gray-100 flex flex-col sm:flex-row gap-4 justify-between items-center">

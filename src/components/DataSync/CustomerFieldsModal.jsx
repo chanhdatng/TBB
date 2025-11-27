@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { X, AlertTriangle, CheckCircle, Loader, User, Phone, Package, Calendar } from 'lucide-react';
+import { X, AlertTriangle, CheckCircle, Loader, User, Phone, Package, Calendar, Globe } from 'lucide-react';
 import { database } from '../../firebase';
 import { ref, update } from 'firebase/database';
 
@@ -71,6 +71,15 @@ const CustomerFieldsModal = ({ isOpen, onClose, customers, orders }) => {
                 issues.push('Missing lastOrderId');
                 fixes.lastOrderId = lastOrder.originalData?.id || lastOrder.id;
                 console.log('❌ Customer missing lastOrderId:', customer.phone, customer.name, 'Will fix with:', fixes.lastOrderId);
+            }
+
+            if (!customer.socialLink) {
+                const socialLink = firstOrder.customer?.socialLink || lastOrder.customer?.socialLink;
+                if (socialLink) {
+                    issues.push('Missing socialLink');
+                    fixes.socialLink = socialLink;
+                    console.log('❌ Customer missing socialLink:', customer.phone, customer.name, 'Will fix with:', fixes.socialLink);
+                }
             }
 
             if (issues.length > 0) {
@@ -179,7 +188,7 @@ const CustomerFieldsModal = ({ isOpen, onClose, customers, orders }) => {
                     ) : (
                         <>
                             {/* Summary Cards */}
-                            <div className="grid grid-cols-4 gap-4 mb-6">
+                            <div className="grid grid-cols-5 gap-4 mb-6">
                                 <div className="bg-orange-50 border border-orange-200 rounded-xl p-4">
                                     <div className="text-orange-600 text-sm font-medium mb-1">Missing Name</div>
                                     <div className="text-2xl font-bold text-orange-700">
@@ -202,6 +211,12 @@ const CustomerFieldsModal = ({ isOpen, onClose, customers, orders }) => {
                                     <div className="text-purple-600 text-sm font-medium mb-1">Missing Last Order</div>
                                     <div className="text-2xl font-bold text-purple-700">
                                         {customersNeedingFix.filter(c => c.issues.includes('Missing lastOrderId')).length}
+                                    </div>
+                                </div>
+                                <div className="bg-pink-50 border border-pink-200 rounded-xl p-4">
+                                    <div className="text-pink-600 text-sm font-medium mb-1">Missing Social Link</div>
+                                    <div className="text-2xl font-bold text-pink-700">
+                                        {customersNeedingFix.filter(c => c.issues.includes('Missing socialLink')).length}
                                     </div>
                                 </div>
                             </div>
@@ -250,6 +265,7 @@ const CustomerFieldsModal = ({ isOpen, onClose, customers, orders }) => {
                                                     <div className="text-xs text-gray-500 mb-1 font-medium">
                                                         {key === 'firstOrderId' ? 'First Order ID' :
                                                          key === 'lastOrderId' ? 'Last Order ID' :
+                                                         key === 'socialLink' ? 'Social Link' :
                                                          key.charAt(0).toUpperCase() + key.slice(1)}
                                                     </div>
                                                     <div className="text-gray-900 truncate" title={String(value)}>

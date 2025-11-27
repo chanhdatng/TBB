@@ -84,14 +84,14 @@ const OrderDetailsModal = ({ isOpen, onClose, order, onEdit, onDelete }) => {
                 {/* Body */}
                 <div className="p-6 max-h-[60vh] overflow-y-auto">
                     {/* Customer Info Summary */}
-                    <div className="mb-6 p-4 bg-gray-50 rounded-xl border border-gray-100 relative group">
+                    <div className="mb-4 p-3 bg-gray-50 rounded-xl border border-gray-100 relative group">
                         {/* Sync Button */}
                         {!customerExists && (
-                            <div className="absolute top-4 right-4">
+                            <div className="absolute top-3 right-3">
                                 <button
                                     onClick={handleSyncCustomer}
                                     disabled={isSyncing || syncSuccess}
-                                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all shadow-sm ${syncSuccess
+                                    className={`flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-medium transition-all shadow-sm ${syncSuccess
                                             ? 'bg-green-100 text-green-700 border border-green-200'
                                             : 'bg-white text-primary border border-primary/20 hover:bg-primary/5'
                                         }`}
@@ -99,38 +99,38 @@ const OrderDetailsModal = ({ isOpen, onClose, order, onEdit, onDelete }) => {
                                 >
                                     {syncSuccess ? (
                                         <>
-                                            <Check size={14} /> Synced
+                                            <Check size={12} /> Synced
                                         </>
                                     ) : (
                                         <>
-                                            <UserPlus size={14} />
-                                            {isSyncing ? 'Syncing...' : 'Sync Customer'}
+                                            <UserPlus size={12} />
+                                            {isSyncing ? 'Syncing...' : 'Sync'}
                                         </>
                                     )}
                                 </button>
                             </div>
                         )}
 
-                        <div className="flex items-center gap-3 mb-3">
+                        <div className="flex items-start gap-3">
                             {order.customer.socialLink ? (
                                 <a
                                     href={order.customer.socialLink}
                                     target="_blank"
                                     rel="noopener noreferrer"
-                                    className="w-10 h-10 rounded-full bg-white border border-gray-200 flex items-center justify-center text-primary shadow-sm hover:bg-gray-50 transition-colors cursor-pointer"
+                                    className="w-8 h-8 rounded-full bg-white border border-gray-200 flex items-center justify-center text-primary shadow-sm hover:bg-gray-50 transition-colors cursor-pointer flex-shrink-0"
                                     title="Open Social Link"
                                 >
-                                    <User size={20} />
+                                    <User size={16} />
                                 </a>
                             ) : (
-                                <div className="w-10 h-10 rounded-full bg-white border border-gray-200 flex items-center justify-center text-primary shadow-sm">
-                                    <User size={20} />
+                                <div className="w-8 h-8 rounded-full bg-white border border-gray-200 flex items-center justify-center text-primary shadow-sm flex-shrink-0">
+                                    <User size={16} />
                                 </div>
                             )}
-                            <div>
-                                <div className="flex items-center gap-2">
+                            <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2 mb-0.5">
                                     <div
-                                        className="font-bold text-gray-900 cursor-pointer hover:text-primary active:scale-95 transition-transform origin-left"
+                                        className="font-bold text-gray-900 cursor-pointer hover:text-primary active:scale-95 transition-transform origin-left text-sm"
                                         onClick={() => copyToClipboard(order.customer.name)}
                                         title="Click to copy name"
                                     >
@@ -146,31 +146,33 @@ const OrderDetailsModal = ({ isOpen, onClose, order, onEdit, onDelete }) => {
                                             onClick={(e) => e.stopPropagation()}
                                         >
                                             {order.customer.socialLink.includes('facebook') || order.customer.socialLink.includes('fb.com') ? (
-                                                <Facebook size={16} />
+                                                <Facebook size={14} />
                                             ) : order.customer.socialLink.includes('instagram') ? (
-                                                <Instagram size={16} />
+                                                <Instagram size={14} />
                                             ) : (
-                                                <Globe size={16} />
+                                                <Globe size={14} />
                                             )}
                                         </a>
                                     )}
                                 </div>
-                                <div
-                                    className="text-sm text-gray-500 flex items-center gap-1 cursor-pointer hover:text-primary active:scale-95 transition-transform origin-left"
-                                    onClick={() => copyToClipboard(order.customer.phone)}
-                                    title="Click to copy phone"
-                                >
-                                    <Phone size={12} /> {order.customer.phone}
+                                <div className="flex flex-col gap-0.5">
+                                    <div
+                                        className="text-xs text-gray-500 flex items-center gap-1.5 cursor-pointer hover:text-primary active:scale-95 transition-transform origin-left"
+                                        onClick={() => copyToClipboard(order.customer.phone)}
+                                        title="Click to copy phone"
+                                    >
+                                        <Phone size={10} /> {order.customer.phone}
+                                    </div>
+                                    <div
+                                        className="text-xs text-gray-600 flex items-start gap-1.5 cursor-pointer hover:text-primary active:scale-95 transition-transform origin-left"
+                                        onClick={() => copyToClipboard(order.customer.address)}
+                                        title="Click to copy address"
+                                    >
+                                        <MapPin size={10} className="mt-0.5 text-gray-400 flex-shrink-0" />
+                                        <span className="line-clamp-2">{order.customer.address}</span>
+                                    </div>
                                 </div>
                             </div>
-                        </div>
-                        <div
-                            className="text-sm text-gray-600 flex items-start gap-2 pl-1 cursor-pointer hover:text-primary active:scale-95 transition-transform origin-left"
-                            onClick={() => copyToClipboard(order.customer.address)}
-                            title="Click to copy address"
-                        >
-                            <MapPin size={14} className="mt-0.5 text-gray-400 flex-shrink-0" />
-                            <span>{order.customer.address}</span>
                         </div>
                     </div>
 

@@ -168,7 +168,69 @@ const CreateOrderModal = ({ isOpen, onClose, onCreateOrder, editingOrder, onUpda
     };
 
     const isDirty = () => {
-        // Simplified dirty check for now, or implement deep comparison if critical
+        // Check if any field has been modified from its initial state
+        if (editingOrder) {
+            // For editing, we could do a deep comparison, but for now let's just check if basic fields changed significantly
+            // or if the user has touched anything.
+            // A simple way is to compare JSON stringified versions of key data, but that might be too strict with order of keys.
+            // Let's stick to the requirement: "khi modal tạo đơn đang chứa thông tin" -> mostly for new orders.
+            // But if editing, we should also warn if they changed something.
+            
+            // Simplified check for editing: always warn if they try to close? No, that's annoying.
+            // Let's check against the state we set in useEffect.
+            // Since we don't keep a copy of "initial edit state" in a separate variable (we set it directly to state),
+            // we can't easily compare without refactoring to store "originalState".
+            // However, we have `editingOrder` prop. We can compare current state to `editingOrder`.
+            
+            const currentCustomer = {
+                name: customer.name,
+                phone: customer.phone,
+                address: customer.address,
+                socialLink: customer.socialLink || ''
+            };
+            const originalCustomer = {
+                name: editingOrder.customer.name,
+                phone: editingOrder.customer.phone,
+                address: editingOrder.customer.address,
+                socialLink: editingOrder.customer.socialLink || ''
+            };
+            if (JSON.stringify(currentCustomer) !== JSON.stringify(originalCustomer)) return true;
+
+            // Check items length
+            if (items.length !== editingOrder.items.length) return true;
+            
+            // Check fees
+            if (Number(fees.ship) !== (editingOrder.originalData?.shipFee || 0)) return true;
+            if (Number(fees.discount) !== (editingOrder.originalData?.discount || 0)) return true;
+            if (Number(fees.other) !== (editingOrder.originalData?.otherFee || 0)) return true;
+            if (fees.note !== (editingOrder.originalData?.note || '')) return true;
+
+            // Check Date/Time
+            // This is a bit tricky due to format conversions, let's skip strict date check for now to avoid false positives
+            // unless we are sure.
+            
+            return false; 
+        }
+
+        // For New Order (most important case from user request)
+        // Check if any field is not empty/default
+        
+        // Customer
+        if (customer.name.trim() !== '' || customer.phone.trim() !== '' || customer.address.trim() !== '' || customer.socialLink.trim() !== '') return true;
+        
+        // Items
+        // Initial items is [{ id: ..., name: '', quantity: 1, price: 0 }]
+        if (items.length > 1) return true;
+        if (items.length === 1) {
+            if (items[0].name.trim() !== '' || items[0].price !== 0 || items[0].quantity !== 1) return true;
+        }
+
+        // Fees
+        if (Number(fees.ship) !== 0 || Number(fees.discount) !== 0 || Number(fees.other) !== 0 || fees.note.trim() !== '') return true;
+
+        // Time Slot
+        if (deliveryTimeSlot !== '') return true;
+
         return false;
     };
 
@@ -317,8 +379,9 @@ const CreateOrderModal = ({ isOpen, onClose, onCreateOrder, editingOrder, onUpda
     const isValid = deliveryTimeSlot && items.some(item => item.name && item.name.trim() !== '');
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm transition-opacity duration-300" onClick={handleCloseAttempt}>
-            <div className="bg-white rounded-2xl w-full max-w-2xl lg:max-w-6xl shadow-xl animate-in fade-in zoom-in-95 duration-300 ease-out max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-black/50 backdrop-blur-sm transition-opacity duration-300" onClick={handleCloseAttempt}>
+            <div className="flex min-h-full items-center justify-center p-4">
+                <div className="bg-white rounded-2xl w-full max-w-2xl lg:max-w-6xl shadow-xl animate-in fade-in zoom-in-95 duration-300 ease-out relative" onClick={(e) => e.stopPropagation()}>
 
                 {/* Header */}
                 <div className="flex items-center justify-between p-6 border-b border-gray-100 sticky top-0 bg-white z-10">
@@ -433,7 +496,7 @@ const CreateOrderModal = ({ isOpen, onClose, onCreateOrder, editingOrder, onUpda
                                 </button>
                             </div>
 
-                            <div className={`space-y-3 p-2 rounded-xl transition-all lg:max-h-[400px] lg:overflow-y-auto lg:custom-scrollbar ${showValidation && items.every(i => !i.name) ? 'border-2 border-red-500 bg-red-50' : ''} ${isShake && items.every(i => !i.name) ? 'animate-shake' : ''}`}>
+                            <div className={`space-y-3 p-2 rounded-xl transition-all ${showValidation && items.every(i => !i.name) ? 'border-2 border-red-500 bg-red-50' : ''} ${isShake && items.every(i => !i.name) ? 'animate-shake' : ''}`}>
                                 {items.map((item, index) => (
                                     <div key={item.id} className="flex flex-col md:flex-row gap-3 items-start md:items-center bg-gray-50 p-3 rounded-xl border border-gray-100">
                                         <div className="flex-1 w-full relative">
@@ -680,6 +743,7 @@ const CreateOrderModal = ({ isOpen, onClose, onCreateOrder, editingOrder, onUpda
                         </div>
                     </div>
                 )}
+                </div>
             </div>
         </div>
     );
