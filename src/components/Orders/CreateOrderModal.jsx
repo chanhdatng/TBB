@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { X, Plus, Trash2, AlertCircle, User, ShoppingBag, Receipt, MapPin, Phone, Save, Globe, Loader2 } from 'lucide-react';
 import { useData } from '../../contexts/DataContext';
+import { scaleVariants, backdropVariants, shakeVariants } from '../../utils/animations';
 
 const CreateOrderModal = ({ isOpen, onClose, onCreateOrder, editingOrder, onUpdateOrder, initialData, onDraftSaved, onDeleteDraft }) => {
     const { products, customers } = useData();
@@ -22,7 +24,7 @@ const CreateOrderModal = ({ isOpen, onClose, onCreateOrder, editingOrder, onUpda
     const [activeSearchId, setActiveSearchId] = useState(null);
 
     // Date & Time State
-    const [orderDate, setOrderDate] = useState(new Date().toISOString().split('T')[0]);
+    const [orderDate, setOrderDate] = useState(new Date().toLocaleDateString('en-CA'));
     const [orderTime, setOrderTime] = useState(new Date().toTimeString().slice(0, 5));
     const [deliveryTimeSlot, setDeliveryTimeSlot] = useState('');
 
@@ -98,7 +100,7 @@ const CreateOrderModal = ({ isOpen, onClose, onCreateOrder, editingOrder, onUpda
                 setCustomer(initialCustomer);
                 setItems([{ id: Date.now(), name: '', quantity: 1, price: 0 }]);
                 setFees(initialFees);
-                setOrderDate(new Date().toISOString().split('T')[0]);
+                setOrderDate(new Date().toLocaleDateString('en-CA'));
                 setOrderTime(new Date().toTimeString().slice(0, 5));
                 setDeliveryTimeSlot('');
             }
@@ -265,6 +267,25 @@ const CreateOrderModal = ({ isOpen, onClose, onCreateOrder, editingOrder, onUpda
         }).toUpperCase();
     };
 
+    const handleSelectProduct = (itemId, product) => {
+        setItems(prevItems => {
+            const newItems = prevItems.map(item => {
+                if (item.id === itemId) {
+                    return { ...item, name: product.name, price: product.price };
+                }
+                return item;
+            });
+
+            // Check if the item being modified is the last one in the list
+            if (prevItems[prevItems.length - 1].id === itemId) {
+                newItems.push({ id: Date.now() + Math.random(), name: '', quantity: 1, price: 0 });
+            }
+
+            return newItems;
+        });
+        setActiveSearchId(null);
+    };
+
     const handleSubmit = async (e) => {
         e.preventDefault();
 
@@ -295,7 +316,7 @@ const CreateOrderModal = ({ isOpen, onClose, onCreateOrder, editingOrder, onUpda
         const orderData = {
             id: editingOrder ? editingOrder.id : generateObjectId(), // Keep ID if editing
             address: customer.address,
-            cakes: items.map(item => ({
+            cakes: validItems.map(item => ({
                 amount: item.quantity,
                 id: generateObjectId(), // Generate ID for items too
                 name: item.name,
@@ -378,10 +399,28 @@ const CreateOrderModal = ({ isOpen, onClose, onCreateOrder, editingOrder, onUpda
     // Derived state for validation check (to style button)
     const isValid = deliveryTimeSlot && items.some(item => item.name && item.name.trim() !== '');
 
+    if (!isOpen) return null;
+
     return (
-        <div className="fixed inset-0 z-50 overflow-y-auto bg-black/50 backdrop-blur-sm transition-opacity duration-300" onClick={handleCloseAttempt}>
-            <div className="flex min-h-full items-center justify-center p-4">
-                <div className="bg-white rounded-2xl w-full max-w-2xl lg:max-w-6xl shadow-xl animate-in fade-in zoom-in-95 duration-300 ease-out relative" onClick={(e) => e.stopPropagation()}>
+        <AnimatePresence>
+            {isOpen && (
+                <motion.div
+                    className="fixed inset-0 z-50 overflow-y-auto bg-black/50 backdrop-blur-sm"
+                    variants={backdropVariants}
+                    initial="hidden"
+                    animate="visible"
+                    exit="exit"
+                    onClick={handleCloseAttempt}
+                >
+                    <div className="flex min-h-full items-center justify-center p-4">
+                        <motion.div
+                            className="bg-white rounded-2xl w-full max-w-2xl lg:max-w-6xl shadow-xl relative"
+                            variants={scaleVariants}
+                            initial="hidden"
+                            animate="visible"
+                            exit="exit"
+                            onClick={(e) => e.stopPropagation()}
+                        >
 
                 {/* Header */}
                 <div className="flex items-center justify-between p-6 border-b border-gray-100 sticky top-0 bg-white z-10">
@@ -487,16 +526,13 @@ const CreateOrderModal = ({ isOpen, onClose, onCreateOrder, editingOrder, onUpda
                                     <ShoppingBag size={20} />
                                     <h3>Order Items</h3>
                                 </div>
-                                <button
-                                    type="button"
-                                    onClick={handleAddItem}
-                                    className="text-sm text-primary font-medium hover:bg-primary/10 px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1"
-                                >
-                                    <Plus size={16} /> Add Item
-                                </button>
                             </div>
 
-                            <div className={`space-y-3 p-2 rounded-xl transition-all ${showValidation && items.every(i => !i.name) ? 'border-2 border-red-500 bg-red-50' : ''} ${isShake && items.every(i => !i.name) ? 'animate-shake' : ''}`}>
+                            <motion.div
+                                className={`space-y-3 p-2 rounded-xl transition-all ${showValidation && items.every(i => !i.name) ? 'border-2 border-red-500 bg-red-50' : ''}`}
+                                animate={isShake && items.every(i => !i.name) ? "shake" : ""}
+                                variants={shakeVariants}
+                            >
                                 {items.map((item, index) => (
                                     <div key={item.id} className="flex flex-col md:flex-row gap-3 items-start md:items-center bg-gray-50 p-3 rounded-xl border border-gray-100">
                                         <div className="flex-1 w-full relative">
@@ -518,8 +554,7 @@ const CreateOrderModal = ({ isOpen, onClose, onCreateOrder, editingOrder, onUpda
                                                                 key={p.id || p.name}
                                                                 className="px-3 py-2 hover:bg-gray-50 cursor-pointer text-sm flex justify-between items-center"
                                                                 onMouseDown={() => {
-                                                                    handleItemChange(item.id, 'name', p.name);
-                                                                    setActiveSearchId(null);
+                                                                    handleSelectProduct(item.id, p);
                                                                 }}
                                                             >
                                                                 <span className="font-medium text-gray-900">{p.name}</span>
@@ -603,6 +638,16 @@ const CreateOrderModal = ({ isOpen, onClose, onCreateOrder, editingOrder, onUpda
                                         </div>
                                     </div>
                                 ))}
+                            </motion.div>
+                            
+                            <div className="flex justify-end pt-2">
+                                <button
+                                    type="button"
+                                    onClick={handleAddItem}
+                                    className="text-sm text-primary font-medium hover:bg-primary/10 px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1"
+                                >
+                                    <Plus size={16} /> Add Item
+                                </button>
                             </div>
                         </div>
                     </div>
@@ -742,10 +787,12 @@ const CreateOrderModal = ({ isOpen, onClose, onCreateOrder, editingOrder, onUpda
                             </div>
                         </div>
                     </div>
-                )}
-                </div>
-            </div>
-        </div>
+                        )}
+                        </motion.div>
+                    </div>
+                </motion.div>
+            )}
+        </AnimatePresence>
     );
 };
 

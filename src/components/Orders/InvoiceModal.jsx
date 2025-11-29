@@ -1,6 +1,7 @@
 import React, { useRef, useState } from 'react';
 import { X, Printer, Download, Share2, ZoomIn, ZoomOut, Maximize } from 'lucide-react';
 import { toPng } from 'html-to-image';
+import { useToast } from '../../contexts/ToastContext';
 
 const InvoiceModal = ({ isOpen, onClose, order }) => {
     const printRef = useRef();
@@ -64,6 +65,8 @@ const InvoiceModal = ({ isOpen, onClose, order }) => {
     const handleZoomOut = () => setZoom(prev => Math.max(prev - 0.1, 0.4));
     const handleFitWindow = () => calculateZoom();
 
+    const { showToast } = useToast();
+
     const handleShare = async () => {
         if (!printRef.current || isSharing) return;
 
@@ -73,7 +76,7 @@ const InvoiceModal = ({ isOpen, onClose, order }) => {
             const dataUrl = await toPng(printRef.current, {
                 cacheBust: true,
                 backgroundColor: '#ffffff',
-                pixelRatio: 2, // Higher quality
+                pixelRatio: 3, // FHD quality (approx 1680x2380px for A5)
                 style: {
                     transform: 'none', // Reset transform for capture
                     boxShadow: 'none'
@@ -84,33 +87,26 @@ const InvoiceModal = ({ isOpen, onClose, order }) => {
             const res = await fetch(dataUrl);
             const blob = await res.blob();
 
-            const file = new File([blob], `invoice_${order.id}.png`, { type: 'image/png' });
-
-            // Check if Web Share API is supported and can share files
-            if (navigator.canShare && navigator.canShare({ files: [file] })) {
-                try {
-                    await navigator.share({
-                        files: [file],
-                        title: `Invoice #${order.id}`,
-                        text: `Hóa đơn cho đơn hàng #${order.id} của ${order.customer.name}`,
-                    });
-                } catch (shareError) {
-                    if (shareError.name !== 'AbortError') {
-                        console.error('Error sharing:', shareError);
-                        // Fallback to download if share fails (but not if user cancelled)
-                        downloadImage(dataUrl);
-                    }
-                }
-            } else {
-                // Fallback for browsers that don't support sharing files
+            try {
+                await navigator.clipboard.write([
+                    new ClipboardItem({
+                        [blob.type]: blob
+                    })
+                ]);
+                showToast('Đã sao chép ảnh hóa đơn vào clipboard', 'success');
+            } catch (clipboardError) {
+                console.error('Clipboard write failed:', clipboardError);
+                // Fallback to download if clipboard fails
+                showToast('Không thể sao chép vào clipboard. Đang tải xuống...', 'warning');
                 downloadImage(dataUrl);
             }
+
             setIsSharing(false);
 
         } catch (error) {
             console.error('Error generating invoice image:', error);
             setIsSharing(false);
-            alert('Không thể tạo ảnh hóa đơn. Vui lòng thử lại.');
+            showToast('Không thể tạo ảnh hóa đơn. Vui lòng thử lại.', 'error');
         }
     };
 
@@ -175,7 +171,7 @@ const InvoiceModal = ({ isOpen, onClose, order }) => {
                             onClick={handlePrint}
                             className="flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors"
                         >
-                            <Printer size={18} /> Print Invoice
+                            <Printer size={18} /> Print
                         </button>
                         <button
                             onClick={onClose}
@@ -209,7 +205,7 @@ const InvoiceModal = ({ isOpen, onClose, order }) => {
                             <div className="text-right">
                                 <h2 className="text-lg font-bold text-gray-800">The Butter Bake</h2>
                                 <p className="text-xs text-gray-600">32A Nguyễn Bá Huân, Thảo Điền</p>
-                                <p className="text-xs text-gray-600">Tel: 0868836165</p>
+                                <p className="text-xs text-gray-600">SĐT: 0868836165</p>
                             </div>
                         </div>
 

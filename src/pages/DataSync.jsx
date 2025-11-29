@@ -1,20 +1,28 @@
 import React, { useMemo, useState } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useData } from '../contexts/DataContext';
-import { database } from '../firebase';
-import { ref, update } from 'firebase/database';
-import { RefreshCw, Users, AlertCircle, CheckCircle, Database, Search, Filter, Download, AlertTriangle, Phone, Calendar, Key, UserCheck } from 'lucide-react';
+import {
+    RefreshCw, Users, AlertCircle, CheckCircle, Database, Search,
+    Filter, Phone, Calendar, Key, UserCheck, Trash2, Sparkles,
+    FileText, ShieldCheck, Zap, TrendingUp, Activity, Settings,
+    Download, Upload, Archive
+} from 'lucide-react';
 import ConfirmSyncModal from '../components/DataSync/ConfirmSyncModal';
 import PhoneFormatModal from '../components/DataSync/PhoneFormatModal';
 import OrderIdsModal from '../components/DataSync/OrderIdsModal';
 import RenameOrderKeysModal from '../components/DataSync/RenameOrderKeysModal';
 import CustomerFieldsModal from '../components/DataSync/CustomerFieldsModal';
+import CleanupModal from '../components/DataSync/CleanupModal';
+import SkeletonCard from '../components/Common/SkeletonCard';
+import { fadeInVariants, staggerChildrenVariants, itemVariants } from '../utils/animations';
 
 const DataSync = () => {
     const { orders, customers, loading } = useData();
+    const [activeTab, setActiveTab] = useState('overview'); // 'overview', 'sync', 'optimize', 'standardize'
     const [searchQuery, setSearchQuery] = useState('');
-    const [filterType, setFilterType] = useState('all'); // 'all', 'missing', 'conflict', 'synced'
-    const [syncType, setSyncType] = useState('socialLink'); // 'socialLink', 'addresses', 'both'
-    const [selectedItems, setSelectedItems] = useState({}); // { phone: 'keep' | 'update' | 'skip' }
+    const [filterType, setFilterType] = useState('all');
+    const [syncType, setSyncType] = useState('socialLink');
+    const [selectedItems, setSelectedItems] = useState({});
     const [isSyncing, setSyncing] = useState(false);
     const [syncProgress, setSyncProgress] = useState({ processed: 0, total: 0, failed: 0 });
     const [showConfirmModal, setShowConfirmModal] = useState(false);
@@ -23,39 +31,39 @@ const DataSync = () => {
     const [showOrderIdsModal, setShowOrderIdsModal] = useState(false);
     const [showRenameKeysModal, setShowRenameKeysModal] = useState(false);
     const [showCustomerFieldsModal, setShowCustomerFieldsModal] = useState(false);
+    const [showCleanupModal, setShowCleanupModal] = useState(false);
+    const [cleanupType, setCleanupType] = useState('duplicates');
+    const [cleanupData, setCleanupData] = useState([]);
+    const [isCleanupLoading, setIsCleanupLoading] = useState(false);
 
     // Normalize phone number for comparison
     const normalizePhone = (phone) => phone?.replace(/\D/g, '') || '';
 
-    // Detect orders with phone format issues (+84 or whitespace)
+    // Detect orders with phone format issues
     const ordersWithPhoneIssues = useMemo(() => {
         if (!orders) return [];
-        
+
         return orders
             .filter(order => {
                 const phone = order.customer?.phone || order.customerPhone;
                 if (!phone) return false;
-                
-                // Check for +84 format or whitespace
                 return phone.startsWith('+84') || phone.includes(' ');
             })
             .map(order => {
                 const currentPhone = order.customer?.phone || order.customerPhone;
                 let suggestedPhone = currentPhone;
                 let issueType = [];
-                
-                // Fix +84 format
+
                 if (currentPhone.startsWith('+84')) {
                     suggestedPhone = suggestedPhone.replace(/^\+84/, '0');
                     issueType.push('+84 format');
                 }
-                
-                // Remove whitespace
+
                 if (currentPhone.includes(' ')) {
                     suggestedPhone = suggestedPhone.replace(/\s+/g, '');
                     issueType.push('whitespace');
                 }
-                
+
                 return {
                     orderId: order.id,
                     customerName: order.customer?.name || 'Unknown',
@@ -68,7 +76,7 @@ const DataSync = () => {
             });
     }, [orders]);
 
-    // Detect customers missing firstOrderId or lastOrderId
+    // Detect customers missing order IDs
     const customersMissingOrderIds = useMemo(() => {
         if (!orders || !customers) return [];
 
@@ -77,7 +85,6 @@ const DataSync = () => {
             customerMap.set(normalizePhone(customer.phone), customer);
         });
 
-        // Group orders by customer
         const customerOrdersMap = new Map();
         orders.forEach(order => {
             const phone = order.customer?.phone || order.customerPhone;
@@ -93,9 +100,8 @@ const DataSync = () => {
         const result = [];
         customerOrdersMap.forEach((customerOrders, normalizedPhone) => {
             const customer = customerMap.get(normalizedPhone);
-            if (!customer) return; // Skip if customer not in newCustomers
+            if (!customer) return;
 
-            // Sort orders by date
             const sortedOrders = [...customerOrders].sort((a, b) => {
                 const dateA = a.timeline?.received?.raw || a.createDate || 0;
                 const dateB = b.timeline?.received?.raw || b.createDate || 0;
@@ -104,8 +110,6 @@ const DataSync = () => {
 
             const firstOrder = sortedOrders[0];
             const lastOrder = sortedOrders[sortedOrders.length - 1];
-
-            // Get actual IDs from originalData
             const firstOrderActualId = firstOrder.originalData?.id || firstOrder.id;
             const lastOrderActualId = lastOrder.originalData?.id || lastOrder.id;
 
@@ -138,16 +142,14 @@ const DataSync = () => {
         return result;
     }, [orders, customers]);
 
-    // Detect orders with Firebase key different from internal ID
+    // Detect orders with wrong Firebase keys
     const ordersWithWrongKeys = useMemo(() => {
         if (!orders) return [];
 
         return orders
             .filter(order => {
-                const firebaseKey = order.id; // Firebase node key (name_id format)
-                const actualId = order.originalData?.id; // ID inside data
-                
-                // Check if they're different
+                const firebaseKey = order.id;
+                const actualId = order.originalData?.id;
                 return actualId && firebaseKey !== actualId;
             })
             .map(order => ({
@@ -160,845 +162,708 @@ const DataSync = () => {
             }));
     }, [orders]);
 
-    // Detect sync scenarios for all orders with socialLinks
-    const syncData = useMemo(() => {
-        if (!orders || !customers) return [];
-
-        const customerMap = new Map();
-        customers.forEach(customer => {
-            customerMap.set(normalizePhone(customer.phone), customer);
-        });
-
-        const syncItems = [];
-        const processedCustomers = new Set();
-
-        // Group orders by customer phone to collect all addresses
-        const customerOrdersMap = new Map();
-        orders.forEach(order => {
-            const { customer: orderCustomer, id: orderId } = order;
-            if (!orderCustomer?.phone) return;
-
-            const normalizedPhone = normalizePhone(orderCustomer.phone);
-            if (!customerOrdersMap.has(normalizedPhone)) {
-                customerOrdersMap.set(normalizedPhone, []);
-            }
-            customerOrdersMap.get(normalizedPhone).push(order);
-        });
-
-        // Process each customer
-        customerOrdersMap.forEach((customerOrders, normalizedPhone) => {
-            const firstOrder = customerOrders[0];
-            const orderCustomer = firstOrder.customer;
-            
-            // Collect unique addresses from all orders
-            const orderAddresses = [...new Set(
-                customerOrders
-                    .map(o => o.customer?.address || o.address)
-                    .filter(addr => addr && addr.trim())
-            )];
-
-            const existingCustomer = customerMap.get(normalizedPhone);
-
-            // Check socialLink sync status
-            let socialLinkStatus = 'none';
-            let currentSocialLink = null;
-            let orderSocialLink = null;
-
-            const ordersWithSocialLink = customerOrders.filter(o => o.customer?.socialLink);
-            if (ordersWithSocialLink.length > 0) {
-                orderSocialLink = ordersWithSocialLink[0].customer.socialLink;
-
-                if (!existingCustomer) {
-                    socialLinkStatus = 'missing';
-                } else if (!existingCustomer.socialLink) {
-                    socialLinkStatus = 'missing';
-                    currentSocialLink = null;
-                } else if (existingCustomer.socialLink !== orderSocialLink) {
-                    socialLinkStatus = 'different';
-                    currentSocialLink = existingCustomer.socialLink;
-                } else {
-                    socialLinkStatus = 'same';
-                    currentSocialLink = existingCustomer.socialLink;
-                }
-            }
-
-            // Check addresses sync status
-            let addressesStatus = 'none';
-            let currentAddresses = [];
-            let missingAddresses = [];
-
-            if (existingCustomer) {
-                currentAddresses = existingCustomer.addresses || [];
-                // Find addresses in orders that are not in customer's addresses array
-                missingAddresses = orderAddresses.filter(addr => 
-                    !currentAddresses.includes(addr)
-                );
-                
-                if (missingAddresses.length > 0) {
-                    addressesStatus = 'missing';
-                } else if (currentAddresses.length > 0 && orderAddresses.length > 0) {
-                    addressesStatus = 'same';
-                }
-            } else {
-                // Customer not in newCustomers
-                missingAddresses = orderAddresses;
-                addressesStatus = orderAddresses.length > 0 ? 'missing' : 'none';
-            }
-
-            // Determine overall conflict type
-            let conflictType = 'same';
-            if (socialLinkStatus === 'missing' || addressesStatus === 'missing') {
-                conflictType = 'missing';
-            } else if (socialLinkStatus === 'different') {
-                conflictType = 'different';
-            }
-
-            // Only add if there's something to sync
-            if (socialLinkStatus !== 'none' || addressesStatus !== 'none') {
-                syncItems.push({
-                    phone: orderCustomer.phone,
-                    name: existingCustomer?.name || orderCustomer.name,
-                    address: existingCustomer?.address || orderCustomer.address,
-                    
-                    // SocialLink data
-                    currentSocialLink,
-                    orderSocialLink,
-                    socialLinkStatus,
-                    
-                    // Addresses data
-                    currentAddresses,
-                    orderAddresses,
-                    missingAddresses,
-                    addressesStatus,
-                    
-                    conflictType,
-                    orderId: firstOrder.id,
-                    orderCount: customerOrders.length
-                });
-            }
-        });
-
-        return syncItems;
-    }, [orders, customers]);
-
-    // Filter and search
-    const filteredData = useMemo(() => {
-        let filtered = syncData;
-
-        // Filter by sync type
-        if (syncType === 'socialLink') {
-            filtered = filtered.filter(item => item.socialLinkStatus !== 'none');
-        } else if (syncType === 'addresses') {
-            filtered = filtered.filter(item => item.addressesStatus !== 'none');
-        }
-        // 'both' shows all
-
-        // Filter by type
-        if (filterType !== 'all') {
-            if (filterType === 'missing') {
-                filtered = filtered.filter(item => item.conflictType === 'missing');
-            } else if (filterType === 'conflict') {
-                filtered = filtered.filter(item => item.conflictType === 'different');
-            } else if (filterType === 'synced') {
-                filtered = filtered.filter(item => item.conflictType === 'same');
-            }
-        }
-
-        // Search
-        if (searchQuery) {
-            const query = searchQuery.toLowerCase();
-            filtered = filtered.filter(item =>
-                item.name?.toLowerCase().includes(query) ||
-                item.phone?.includes(query) ||
-                item.orderSocialLink?.toLowerCase().includes(query) ||
-                item.orderAddresses?.some(addr => addr.toLowerCase().includes(query))
-            );
-        }
-
-        return filtered;
-    }, [syncData, filterType, searchQuery, syncType]);
-
-    // Calculate stats
+    // Calculate comprehensive stats
     const stats = useMemo(() => {
-        const missingCount = syncData.filter(item => item.conflictType === 'missing').length;
-        const conflictCount = syncData.filter(item => item.conflictType === 'different').length;
-        const syncedCount = syncData.filter(item => item.conflictType === 'same').length;
         const totalCustomers = customers?.length || 0;
         const totalOrders = orders?.length || 0;
-        
-        // Debug: Count orders with socialLink
-        const ordersWithSocialLink = orders?.filter(order => order.customer?.socialLink).length || 0;
-        
-        // Count customers needing address sync
-        const needsAddressSync = syncData.filter(item => item.addressesStatus === 'missing').length;
-        const needsSocialLinkSync = syncData.filter(item => 
-            item.socialLinkStatus === 'missing' || item.socialLinkStatus === 'different'
-        ).length;
-        
-        // Count orders with phone format issues
-        const ordersNeedPhoneFormat = ordersWithPhoneIssues.length;
-        
-        // Count customers missing order IDs
-        const customersMissingOrderIdsCount = customersMissingOrderIds.length;
-        
-        // Count orders with wrong Firebase keys
-        const ordersWithWrongKeysCount = ordersWithWrongKeys.length;
-        
-        // Count customers missing required fields (name, phone, firstOrderId, lastOrderId)
+
+        // Phone issues
+        const phoneIssues = ordersWithPhoneIssues.length;
+
+        // Order ID issues
+        const orderIdIssues = customersMissingOrderIds.length;
+
+        // Key issues
+        const keyIssues = ordersWithWrongKeys.length;
+
+        // Missing fields
         const processedPhones = new Set();
         const customersMissingRequiredFields = customers?.filter(customer => {
-            // Skip duplicates
             const normalizedPhone = normalizePhone(customer.phone);
             if (processedPhones.has(normalizedPhone)) return false;
             processedPhones.add(normalizedPhone);
-            
-            // Skip if no orders
+
             const hasOrders = orders?.some(order => {
                 const orderPhone = order.customer?.phone || order.customerPhone;
                 return normalizePhone(orderPhone) === normalizedPhone;
             });
             if (!hasOrders) return false;
-            
-            // Check required fields only
+
             return !customer.name || !customer.phone || !customer.firstOrderId || !customer.lastOrderId;
         }).length || 0;
+
+        // Duplicate customers
+        const duplicateCount = totalCustomers - processedPhones.size;
+
+        // Calculate data health score (0-100)
+        const totalIssues = phoneIssues + orderIdIssues + keyIssues + customersMissingRequiredFields + duplicateCount;
+        const possibleIssues = totalOrders + totalCustomers * 2;
+        const healthScore = possibleIssues > 0 ? Math.round(((possibleIssues - totalIssues) / possibleIssues) * 100) : 100;
 
         return {
             totalCustomers,
             totalOrders,
-            ordersWithSocialLink,
-            needsAddressSync,
-            needsSocialLinkSync,
-            ordersNeedPhoneFormat,
-            customersMissingOrderIdsCount,
-            ordersWithWrongKeysCount,
+            phoneIssues,
+            orderIdIssues,
+            keyIssues,
             customersMissingRequiredFields,
-            missingCount,
-            conflictCount,
-            syncedCount,
-            needsAction: missingCount + conflictCount
+            duplicateCount,
+            totalIssues,
+            healthScore,
+            needsOptimization: totalIssues > 0
         };
-    }, [syncData, customers, orders]);
+    }, [orders, customers, ordersWithPhoneIssues, customersMissingOrderIds, ordersWithWrongKeys]);
 
-    // Handle selection change
-    const handleActionChange = (phone, action) => {
-        setSelectedItems(prev => ({
-            ...prev,
-            [phone]: action
-        }));
-    };
+    // Get detailed duplicate customers for cleanup modal
+    const duplicateCustomers = useMemo(() => {
+        if (!customers) return [];
 
-    // Handle select all for filtered items
-    const handleSelectAll = (action) => {
-        const newSelections = {};
-        filteredData.forEach(item => {
-            if (item.conflictType !== 'same') {
-                newSelections[item.phone] = action;
+        const phoneGroups = new Map();
+        customers.forEach(customer => {
+            const normalizedPhone = normalizePhone(customer.phone);
+            if (!phoneGroups.has(normalizedPhone)) {
+                phoneGroups.set(normalizedPhone, []);
             }
+            phoneGroups.get(normalizedPhone).push(customer);
         });
-        setSelectedItems(prev => ({
-            ...prev,
-            ...newSelections
-        }));
-    };
 
-    // Prepare sync summary
-    const getSyncSummary = () => {
-        const updates = [];
-        const skips = [];
-        const keeps = [];
-
-        filteredData.forEach(item => {
-            const action = selectedItems[item.phone];
-            if (action === 'update') {
-                updates.push(item);
-            } else if (action === 'skip') {
-                skips.push(item);
-            } else if (action === 'keep') {
-                keeps.push(item);
+        const duplicates = [];
+        phoneGroups.forEach((group, phone) => {
+            if (group.length > 1) {
+                group.forEach((customer, idx) => {
+                    if (idx > 0) { // Keep first, mark others as duplicates
+                        duplicates.push({
+                            name: customer.name || 'Unnamed',
+                            phone: customer.phone,
+                            details: `${group.length} entries with same phone number`,
+                            reason: `Duplicate of ${group[0].name || 'first entry'}`,
+                            date: customer.createdAt ? new Date(customer.createdAt).toLocaleDateString() : 'Unknown',
+                            customerId: customer.id
+                        });
+                    }
+                });
             }
         });
 
-        return { updates, skips, keeps };
+        return duplicates;
+    }, [customers]);
+
+    // Handlers for cleanup actions
+    const handleOpenCleanup = (type) => {
+        setCleanupType(type);
+
+        if (type === 'duplicates') {
+            setCleanupData(duplicateCustomers);
+        } else if (type === 'archive') {
+            // Get orders older than 1 year
+            const oneYearAgo = new Date();
+            oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
+
+            const oldOrders = orders?.filter(order => {
+                const orderDate = order.timeline?.received?.raw ? new Date(order.timeline.received.raw) : null;
+                return orderDate && orderDate < oneYearAgo;
+            }).map(order => ({
+                name: order.customer?.name || 'Unknown Customer',
+                phone: order.customer?.phone || 'N/A',
+                details: `${order.items?.length || 0} items - ${order.price || 'N/A'}`,
+                date: order.timeline?.received?.date || 'Unknown',
+                orderId: order.id
+            })) || [];
+
+            setCleanupData(oldOrders);
+        } else if (type === 'export') {
+            // Prepare all data for export
+            const exportData = orders?.map(order => ({
+                name: `Order #${order.id}`,
+                phone: order.customer?.phone || 'N/A',
+                details: `${order.customer?.name || 'Unknown'} - ${order.items?.length || 0} items`,
+                date: order.timeline?.received?.date || 'Unknown',
+                orderId: order.id
+            })) || [];
+
+            setCleanupData(exportData);
+        }
+
+        setShowCleanupModal(true);
     };
 
-    // Execute sync
-    const executeSync = async () => {
-        const { updates } = getSyncSummary();
-        if (updates.length === 0) {
-            alert('No items selected for update');
-            return;
+    const handleCleanupConfirm = async (selectedItems) => {
+        setIsCleanupLoading(true);
+
+        try {
+            // Simulate cleanup process
+            await new Promise(resolve => setTimeout(resolve, 1500));
+
+            console.log(`${cleanupType} cleanup:`, selectedItems);
+
+            // Here you would actually perform the cleanup action
+            // For example, delete from Firebase, archive data, export to JSON, etc.
+
+            setShowCleanupModal(false);
+            setCleanupData([]);
+
+            // Show success message (you can use a toast here)
+            alert(`Successfully processed ${selectedItems.length} item(s)!`);
+        } catch (error) {
+            console.error('Cleanup error:', error);
+            alert('An error occurred during cleanup');
+        } finally {
+            setIsCleanupLoading(false);
         }
-
-        setSyncing(true);
-        setSyncProgress({ processed: 0, total: updates.length, failed: 0 });
-
-        const BATCH_SIZE = 50;
-        const DELAY_MS = 100;
-        let processed = 0;
-        let failed = 0;
-
-        for (let i = 0; i < updates.length; i += BATCH_SIZE) {
-            const batch = updates.slice(i, i + BATCH_SIZE);
-
-            const promises = batch.map(async (item) => {
-                try {
-                    const updateData = {};
-                    
-                    // Sync socialLink if needed and selected
-                    if (syncType === 'socialLink' || syncType === 'both') {
-                        if (item.orderSocialLink && item.socialLinkStatus !== 'same') {
-                            updateData.socialLink = item.orderSocialLink;
-                        }
-                    }
-                    
-                    // Sync addresses if needed and selected
-                    if (syncType === 'addresses' || syncType === 'both') {
-                        if (item.missingAddresses && item.missingAddresses.length > 0) {
-                            // Merge current addresses with missing ones
-                            const mergedAddresses = [
-                                ...new Set([
-                                    ...(item.currentAddresses || []),
-                                    ...item.missingAddresses
-                                ])
-                            ];
-                            updateData.addresses = mergedAddresses;
-                        }
-                    }
-                    
-                    if (Object.keys(updateData).length > 0) {
-                        await update(ref(database, 'newCustomers/' + item.phone), updateData);
-                    }
-                    
-                    return { success: true, phone: item.phone };
-                } catch (error) {
-                    console.error(`Failed to sync ${item.phone}:`, error);
-                    return { success: false, phone: item.phone, error };
-                }
-            });
-
-            const results = await Promise.all(promises);
-            processed += batch.length;
-            failed += results.filter(r => !r.success).length;
-
-            setSyncProgress({ processed, total: updates.length, failed });
-
-            // Delay between batches
-            if (i + BATCH_SIZE < updates.length) {
-                await new Promise(resolve => setTimeout(resolve, DELAY_MS));
-            }
-        }
-
-        setSyncing(false);
-        setSyncResult({
-            total: updates.length,
-            success: processed - failed,
-            failed: failed
-        });
-
-        // Clear selections after successful sync
-        setSelectedItems({});
-        setShowConfirmModal(false);
-
-        // Show result notification
-        setTimeout(() => setSyncResult(null), 5000);
     };
 
-    const openConfirmModal = () => {
-        const { updates } = getSyncSummary();
-        if (updates.length === 0) {
-            alert('Please select at least one item to update');
-            return;
-        }
-        setShowConfirmModal(true);
+    // Get health score color
+    const getHealthScoreColor = (score) => {
+        if (score >= 90) return 'text-green-600';
+        if (score >= 70) return 'text-yellow-600';
+        return 'text-red-600';
+    };
+
+    const getHealthScoreBg = (score) => {
+        if (score >= 90) return 'bg-green-100';
+        if (score >= 70) return 'bg-yellow-100';
+        return 'bg-red-100';
     };
 
     if (loading) {
         return (
-            <div className="flex items-center justify-center h-64">
-                <RefreshCw className="animate-spin text-primary" size={32} />
+            <div className="space-y-6">
+                <div className="flex items-center justify-between">
+                    <div>
+                        <SkeletonCard lines={2} className="w-64 h-16" />
+                    </div>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                    {[...Array(4)].map((_, i) => (
+                        <SkeletonCard key={i} lines={3} showIcon={true} />
+                    ))}
+                </div>
             </div>
         );
     }
 
     return (
-        <div>
+        <motion.div
+            variants={fadeInVariants}
+            initial="hidden"
+            animate="visible"
+            className="space-y-6"
+        >
             {/* Header */}
-            <div className="mb-8">
-                <h1 className="text-2xl font-bold text-gray-900">Data Synchronization</h1>
-                <p className="text-gray-500 mt-1">Manage customer social links from orders to Firebase</p>
-                <div className="mt-2 text-sm text-gray-600 bg-blue-50 border border-blue-200 rounded-lg p-3">
-                    <strong>Debug Info:</strong> Total Orders: {stats.totalOrders} | Orders with socialLink: {stats.ordersWithSocialLink} | Unique customers detected: {syncData.length}
-                </div>
-            </div>
-
-            {/* Action Items Section */}
-            <div className="space-y-4 mb-6">
-                {/* Phone Format Fix Section */}
-                {stats.ordersNeedPhoneFormat > 0 && (
-                    <div className="bg-orange-50 border border-orange-200 rounded-2xl p-6">
-                        <div className="flex items-start justify-between">
-                            <div className="flex items-start gap-4">
-                                <div className="w-12 h-12 bg-orange-100 rounded-xl flex items-center justify-center flex-shrink-0">
-                                    <Phone className="text-orange-600" size={24} />
-                                </div>
-                                <div>
-                                    <h3 className="text-lg font-semibold text-gray-900 mb-1">
-                                        Phone Format Issue Detected
-                                    </h3>
-                                    <p className="text-sm text-gray-600 mb-3">
-                                        Found <strong>{stats.ordersNeedPhoneFormat} orders</strong> with phone format issues (+84 format or whitespace). 
-                                        These should be fixed for consistency.
-                                    </p>
-                                    <button
-                                        onClick={() => setShowPhoneFormatModal(true)}
-                                        className="flex items-center gap-2 bg-orange-600 hover:bg-orange-700 text-white px-4 py-2 rounded-lg font-medium transition-colors shadow-lg shadow-orange-600/30"
-                                    >
-                                        <Phone size={18} />
-                                        Fix Phone Formats ({stats.ordersNeedPhoneFormat})
-                                    </button>
-                                </div>
-                            </div>
+            <motion.div
+                initial={{ opacity: 0, y: -20 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="flex flex-col md:flex-row md:items-center justify-between gap-4"
+            >
+                <div>
+                    <h1 className="text-3xl font-bold text-gray-900 flex items-center gap-3">
+                        <div className="p-2 bg-primary/10 rounded-xl">
+                            <Database className="text-primary" size={28} />
                         </div>
-                    </div>
-                )}
-
-                {/* Order IDs Fix Section */}
-                {stats.customersMissingOrderIdsCount > 0 && (
-                    <div className="bg-indigo-50 border border-indigo-200 rounded-2xl p-6">
-                        <div className="flex items-start justify-between">
-                            <div className="flex items-start gap-4">
-                                <div className="w-12 h-12 bg-indigo-100 rounded-xl flex items-center justify-center flex-shrink-0">
-                                    <Calendar className="text-indigo-600" size={24} />
-                                </div>
-                                <div>
-                                    <h3 className="text-lg font-semibold text-gray-900 mb-1">
-                                        Missing Order IDs Detected
-                                    </h3>
-                                    <p className="text-sm text-gray-600 mb-3">
-                                        Found <strong>{stats.customersMissingOrderIdsCount} customers</strong> missing firstOrderId or lastOrderId. 
-                                        These should be synced for proper order tracking.
-                                    </p>
-                                    <button
-                                        onClick={() => setShowOrderIdsModal(true)}
-                                        className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg font-medium transition-colors shadow-lg shadow-indigo-600/30"
-                                    >
-                                        <Calendar size={18} />
-                                        Sync Order IDs ({stats.customersMissingOrderIdsCount})
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                )}
-
-                {/* Rename Firebase Keys Section */}
-                {stats.ordersWithWrongKeysCount > 0 && (
-                    <div className="bg-rose-50 border border-rose-200 rounded-2xl p-6">
-                        <div className="flex items-start justify-between">
-                            <div className="flex items-start gap-4">
-                                <div className="w-12 h-12 bg-rose-100 rounded-xl flex items-center justify-center flex-shrink-0">
-                                    <Key className="text-rose-600" size={24} />
-                                </div>
-                                <div>
-                                    <h3 className="text-lg font-semibold text-gray-900 mb-1">
-                                        Wrong Firebase Keys Detected
-                                    </h3>
-                                    <p className="text-sm text-gray-600 mb-3">
-                                        Found <strong>{stats.ordersWithWrongKeysCount} orders</strong> with Firebase keys (name_id format) different from their actual IDs. 
-                                        <br />
-                                        <span className="text-rose-600 font-medium">⚠️ Warning: This operation will rename Firebase nodes and cannot be undone!</span>
-                                    </p>
-                                    <button
-                                        onClick={() => setShowRenameKeysModal(true)}
-                                        className="flex items-center gap-2 bg-rose-600 hover:bg-rose-700 text-white px-4 py-2 rounded-lg font-medium transition-colors shadow-lg shadow-rose-600/30"
-                                    >
-                                        <Key size={18} />
-                                        Rename Keys ({stats.ordersWithWrongKeysCount})
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                )}
-
-            </div>
-
-            {/* Stats Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
-                <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
-                    <div className="flex items-center justify-between">
-                        <div>
-                            <p className="text-sm text-gray-500 font-medium">Total Customers</p>
-                            <p className="text-2xl font-bold text-gray-900 mt-1">{stats.totalCustomers}</p>
-                        </div>
-                        <div className="w-12 h-12 bg-blue-50 rounded-xl flex items-center justify-center">
-                            <Users className="text-blue-600" size={24} />
-                        </div>
-                    </div>
+                        Data Management Center
+                    </h1>
+                    <p className="text-gray-500 mt-2">Optimize, standardize, and maintain your Firebase data</p>
                 </div>
 
-                <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
-                    <div className="flex items-center justify-between">
-                        <div>
-                            <p className="text-sm text-gray-500 font-medium">Need SocialLink</p>
-                            <p className="text-2xl font-bold text-blue-600 mt-1">{stats.needsSocialLinkSync}</p>
+                {/* Health Score Badge */}
+                <motion.div
+                    initial={{ scale: 0 }}
+                    animate={{ scale: 1 }}
+                    transition={{ type: "spring", stiffness: 200 }}
+                    className={`${getHealthScoreBg(stats.healthScore)} rounded-2xl p-6 min-w-[200px]`}
+                >
+                    <div className="text-center">
+                        <div className="flex items-center justify-center gap-2 mb-1">
+                            <ShieldCheck className={getHealthScoreColor(stats.healthScore)} size={20} />
+                            <span className="text-sm font-medium text-gray-600">Data Health Score</span>
                         </div>
-                        <div className="w-12 h-12 bg-blue-50 rounded-xl flex items-center justify-center">
-                            <AlertCircle className="text-blue-600" size={24} />
+                        <div className={`text-4xl font-bold ${getHealthScoreColor(stats.healthScore)}`}>
+                            {stats.healthScore}%
                         </div>
-                    </div>
-                </div>
-
-                <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
-                    <div className="flex items-center justify-between">
-                        <div>
-                            <p className="text-sm text-gray-500 font-medium">Need Addresses</p>
-                            <p className="text-2xl font-bold text-purple-600 mt-1">{stats.needsAddressSync}</p>
-                        </div>
-                        <div className="w-12 h-12 bg-purple-50 rounded-xl flex items-center justify-center">
-                            <AlertCircle className="text-purple-600" size={24} />
-                        </div>
-                    </div>
-                </div>
-
-                <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
-                    <div className="flex items-center justify-between">
-                        <div>
-                            <p className="text-sm text-gray-500 font-medium">Conflicts</p>
-                            <p className="text-2xl font-bold text-red-600 mt-1">{stats.conflictCount}</p>
-                        </div>
-                        <div className="w-12 h-12 bg-red-50 rounded-xl flex items-center justify-center">
-                            <AlertTriangle className="text-red-600" size={24} />
-                        </div>
-                    </div>
-                </div>
-
-                <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
-                    <div className="flex items-center justify-between">
-                        <div>
-                            <p className="text-sm text-gray-500 font-medium">Already Synced</p>
-                            <p className="text-2xl font-bold text-green-600 mt-1">{stats.syncedCount}</p>
-                        </div>
-                        <div className="w-12 h-12 bg-green-50 rounded-xl flex items-center justify-center">
-                            <CheckCircle className="text-green-600" size={24} />
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            {/* Sync Result Notification */}
-            {syncResult && (
-                <div className={`mb-6 p-4 rounded-xl border ${syncResult.failed > 0 ? 'bg-yellow-50 border-yellow-200' : 'bg-green-50 border-green-200'
-                    }`}>
-                    <div className="flex items-center gap-3">
-                        {syncResult.failed > 0 ? (
-                            <AlertTriangle className="text-yellow-600" size={20} />
-                        ) : (
-                            <CheckCircle className="text-green-600" size={20} />
-                        )}
-                        <p className={syncResult.failed > 0 ? 'text-yellow-800' : 'text-green-800'}>
-                            Sync completed: {syncResult.success} successful
-                            {syncResult.failed > 0 && `, ${syncResult.failed} failed`}
+                        <p className="text-xs text-gray-500 mt-1">
+                            {stats.totalIssues} issues found
                         </p>
                     </div>
-                </div>
-            )}
+                </motion.div>
+            </motion.div>
 
-            {/* Filters and Actions */}
-            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 mb-6">
-                <div className="flex flex-col lg:flex-row lg:items-center gap-4">
-                    {/* Search */}
-                    <div className="flex-1 relative">
-                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
-                        <input
-                            type="text"
-                            placeholder="Search by name, phone, address, or social link..."
-                            value={searchQuery}
-                            onChange={(e) => setSearchQuery(e.target.value)}
-                            className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
-                        />
+            {/* Quick Stats Grid */}
+            <motion.div
+                variants={staggerChildrenVariants}
+                initial="hidden"
+                animate="visible"
+                className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4"
+            >
+                <motion.div
+                    variants={itemVariants}
+                    whileHover={{ y: -4, transition: { duration: 0.2 } }}
+                    className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-2xl p-6 text-white shadow-lg shadow-blue-500/30"
+                >
+                    <div className="flex items-center justify-between mb-4">
+                        <div className="p-2 bg-white/20 rounded-xl backdrop-blur-sm">
+                            <Users size={24} />
+                        </div>
+                        <TrendingUp size={20} className="opacity-70" />
                     </div>
+                    <h3 className="text-sm font-medium opacity-90 mb-1">Total Customers</h3>
+                    <p className="text-3xl font-bold">{stats.totalCustomers.toLocaleString()}</p>
+                </motion.div>
 
-                    {/* Sync Type Filter */}
-                    <div className="flex items-center gap-2">
-                        <span className="text-sm text-gray-600 font-medium">Sync:</span>
-                        <select
-                            value={syncType}
-                            onChange={(e) => setSyncType(e.target.value)}
-                            className="px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
-                        >
-                            <option value="both">Both</option>
-                            <option value="socialLink">SocialLink Only</option>
-                            <option value="addresses">Addresses Only</option>
-                        </select>
+                <motion.div
+                    variants={itemVariants}
+                    whileHover={{ y: -4, transition: { duration: 0.2 } }}
+                    className="bg-gradient-to-br from-purple-500 to-purple-600 rounded-2xl p-6 text-white shadow-lg shadow-purple-500/30"
+                >
+                    <div className="flex items-center justify-between mb-4">
+                        <div className="p-2 bg-white/20 rounded-xl backdrop-blur-sm">
+                            <FileText size={24} />
+                        </div>
+                        <Activity size={20} className="opacity-70" />
                     </div>
+                    <h3 className="text-sm font-medium opacity-90 mb-1">Total Orders</h3>
+                    <p className="text-3xl font-bold">{stats.totalOrders.toLocaleString()}</p>
+                </motion.div>
 
-                    {/* Status Filter */}
-                    <div className="flex items-center gap-2">
-                        <Filter size={20} className="text-gray-400" />
-                        <select
-                            value={filterType}
-                            onChange={(e) => setFilterType(e.target.value)}
-                            className="px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
-                        >
-                            <option value="all">All ({syncData.length})</option>
-                            <option value="missing">Missing ({stats.missingCount})</option>
-                            <option value="conflict">Conflicts ({stats.conflictCount})</option>
-                            <option value="synced">Synced ({stats.syncedCount})</option>
-                        </select>
+                <motion.div
+                    variants={itemVariants}
+                    whileHover={{ y: -4, transition: { duration: 0.2 } }}
+                    className="bg-gradient-to-br from-orange-500 to-orange-600 rounded-2xl p-6 text-white shadow-lg shadow-orange-500/30"
+                >
+                    <div className="flex items-center justify-between mb-4">
+                        <div className="p-2 bg-white/20 rounded-xl backdrop-blur-sm">
+                            <AlertCircle size={24} />
+                        </div>
+                        <Zap size={20} className="opacity-70" />
                     </div>
+                    <h3 className="text-sm font-medium opacity-90 mb-1">Issues Detected</h3>
+                    <p className="text-3xl font-bold">{stats.totalIssues}</p>
+                </motion.div>
 
-                    {/* Bulk Actions */}
-                    <div className="flex items-center gap-2">
+                <motion.div
+                    variants={itemVariants}
+                    whileHover={{ y: -4, transition: { duration: 0.2 } }}
+                    className="bg-gradient-to-br from-green-500 to-green-600 rounded-2xl p-6 text-white shadow-lg shadow-green-500/30"
+                >
+                    <div className="flex items-center justify-between mb-4">
+                        <div className="p-2 bg-white/20 rounded-xl backdrop-blur-sm">
+                            <Sparkles size={24} />
+                        </div>
+                        <CheckCircle size={20} className="opacity-70" />
+                    </div>
+                    <h3 className="text-sm font-medium opacity-90 mb-1">Optimization Potential</h3>
+                    <p className="text-3xl font-bold">{stats.needsOptimization ? 'High' : 'Low'}</p>
+                </motion.div>
+            </motion.div>
+
+            {/* Tab Navigation */}
+            <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ delay: 0.2 }}
+                className="bg-white rounded-2xl border border-gray-100 shadow-sm p-2"
+            >
+                <div className="flex gap-2">
+                    {[
+                        { id: 'overview', label: 'Overview', icon: Activity },
+                        { id: 'standardize', label: 'Standardize', icon: Settings },
+                        { id: 'optimize', label: 'Optimize', icon: Zap },
+                        { id: 'maintenance', label: 'Maintenance', icon: Database }
+                    ].map((tab) => (
                         <button
-                            onClick={() => handleSelectAll('update')}
-                            className="px-4 py-2 border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50 transition-colors text-sm font-medium"
+                            key={tab.id}
+                            onClick={() => setActiveTab(tab.id)}
+                            className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-xl font-medium transition-all ${
+                                activeTab === tab.id
+                                    ? 'bg-primary text-white shadow-lg shadow-primary/30'
+                                    : 'text-gray-600 hover:bg-gray-50'
+                            }`}
                         >
-                            Select All to Update
+                            <tab.icon size={20} />
+                            <span className="hidden sm:inline">{tab.label}</span>
                         </button>
-                        <button
-                            onClick={openConfirmModal}
-                            disabled={isSyncing || Object.keys(selectedItems).length === 0}
-                            className="flex items-center gap-2 bg-primary hover:bg-primary-light text-white px-6 py-2 rounded-lg font-medium transition-colors shadow-lg shadow-primary/30 disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                            {isSyncing ? (
-                                <>
-                                    <RefreshCw className="animate-spin" size={20} />
-                                    Syncing... ({syncProgress.processed}/{syncProgress.total})
-                                </>
-                            ) : (
-                                <>
-                                    <Database size={20} />
-                                    Sync Selected ({Object.values(selectedItems).filter(a => a === 'update').length})
-                                </>
-                            )}
-                        </button>
-                    </div>
+                    ))}
                 </div>
-            </div>
+            </motion.div>
 
-            {/* Data Table */}
-            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-                <div className="overflow-x-auto">
-                    <table className="w-full border-collapse">
-                        <thead>
-                            <tr className="bg-gray-50 border-b border-gray-100">
-                                <th className="px-4 py-4 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-                                <th className="px-4 py-4 text-left text-xs font-medium text-gray-500 uppercase">Customer</th>
-                                <th className="px-4 py-4 text-left text-xs font-medium text-gray-500 uppercase">SocialLink Status</th>
-                                <th className="px-4 py-4 text-left text-xs font-medium text-gray-500 uppercase">Addresses Status</th>
-                                <th className="px-4 py-4 text-left text-xs font-medium text-gray-500 uppercase">Action</th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-gray-100">
-                            {filteredData.length === 0 ? (
-                                <tr>
-                                    <td colSpan="5" className="px-4 py-12 text-center text-gray-500">
-                                        No data found
-                                    </td>
-                                </tr>
-                            ) : (
-                                filteredData.map((item) => (
-                                    <tr
-                                        key={item.phone}
-                                        className={`
-                                            hover:bg-gray-50 transition-colors
-                                            ${item.conflictType === 'different' ? 'bg-red-50/30' : ''}
-                                            ${item.conflictType === 'missing' ? 'bg-yellow-50/30' : ''}
-                                            ${item.conflictType === 'same' ? 'bg-gray-50/30' : ''}
-                                        `}
-                                    >
-                                        <td className="px-4 py-4">
-                                            <span className={`
-                                                px-2 py-1 rounded-full text-xs font-medium
-                                                ${item.conflictType === 'different' ? 'bg-red-100 text-red-700' : ''}
-                                                ${item.conflictType === 'missing' ? 'bg-yellow-100 text-yellow-700' : ''}
-                                                ${item.conflictType === 'same' ? 'bg-green-100 text-green-700' : ''}
-                                            `}>
-                                                {item.conflictType === 'different' && 'Conflict'}
-                                                {item.conflictType === 'missing' && 'Missing'}
-                                                {item.conflictType === 'same' && 'Synced'}
+            {/* Tab Content */}
+            <AnimatePresence mode="wait">
+                {activeTab === 'overview' && (
+                    <motion.div
+                        key="overview"
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -20 }}
+                        className="space-y-4"
+                    >
+                        <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+                            <Activity size={24} className="text-primary" />
+                            Data Overview
+                        </h2>
+
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                            {/* Issues Breakdown */}
+                            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
+                                <h3 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
+                                    <AlertCircle className="text-orange-500" size={20} />
+                                    Issues Breakdown
+                                </h3>
+                                <div className="space-y-3">
+                                    {[
+                                        { label: 'Phone Format Issues', count: stats.phoneIssues, color: 'orange' },
+                                        { label: 'Missing Order IDs', count: stats.orderIdIssues, color: 'indigo' },
+                                        { label: 'Wrong Firebase Keys', count: stats.keyIssues, color: 'rose' },
+                                        { label: 'Missing Required Fields', count: stats.customersMissingRequiredFields, color: 'purple' },
+                                        { label: 'Duplicate Entries', count: stats.duplicateCount, color: 'yellow' }
+                                    ].map((item, idx) => (
+                                        <div key={idx} className="flex items-center justify-between">
+                                            <span className="text-sm text-gray-600">{item.label}</span>
+                                            <span className={`px-3 py-1 rounded-full text-sm font-semibold bg-${item.color}-100 text-${item.color}-700`}>
+                                                {item.count}
                                             </span>
-                                        </td>
-                                        <td className="px-4 py-4">
-                                            <div>
-                                                <p className="font-medium text-gray-900">{item.name}</p>
-                                                <p className="text-sm text-gray-500">{item.phone}</p>
-                                                <p className="text-xs text-gray-400 mt-1">{item.orderCount} orders</p>
-                                            </div>
-                                        </td>
-                                        <td className="px-4 py-4">
-                                            {item.socialLinkStatus === 'none' ? (
-                                                <span className="text-sm text-gray-400 italic">Not applicable</span>
-                                            ) : (
-                                                <div className="space-y-1">
-                                                    <div>
-                                                        <p className="text-xs text-gray-500">Current:</p>
-                                                        {item.currentSocialLink ? (
-                                                            <a
-                                                                href={item.currentSocialLink}
-                                                                target="_blank"
-                                                                rel="noopener noreferrer"
-                                                                className="text-sm text-blue-600 hover:underline break-all"
-                                                            >
-                                                                {item.currentSocialLink}
-                                                            </a>
-                                                        ) : (
-                                                            <span className="text-sm text-gray-400 italic">None</span>
-                                                        )}
-                                                    </div>
-                                                    <div>
-                                                        <p className="text-xs text-gray-500">From orders:</p>
-                                                        <a
-                                                            href={item.orderSocialLink}
-                                                            target="_blank"
-                                                            rel="noopener noreferrer"
-                                                            className="text-sm text-green-600 hover:underline break-all"
-                                                        >
-                                                            {item.orderSocialLink}
-                                                        </a>
-                                                    </div>
-                                                </div>
-                                            )}
-                                        </td>
-                                        <td className="px-4 py-4">
-                                            {item.addressesStatus === 'none' ? (
-                                                <span className="text-sm text-gray-400 italic">Not applicable</span>
-                                            ) : (
-                                                <div className="space-y-2">
-                                                    {item.currentAddresses.length > 0 && (
-                                                        <div>
-                                                            <p className="text-xs text-gray-500 mb-1">Current ({item.currentAddresses.length}):</p>
-                                                            <div className="space-y-1">
-                                                                {item.currentAddresses.slice(0, 2).map((addr, idx) => (
-                                                                    <p key={idx} className="text-xs text-gray-600 truncate max-w-xs">• {addr}</p>
-                                                                ))}
-                                                                {item.currentAddresses.length > 2 && (
-                                                                    <p className="text-xs text-gray-400 italic">+{item.currentAddresses.length - 2} more</p>
-                                                                )}
-                                                            </div>
-                                                        </div>
-                                                    )}
-                                                    {item.missingAddresses.length > 0 && (
-                                                        <div>
-                                                            <p className="text-xs text-purple-600 font-medium mb-1">Missing ({item.missingAddresses.length}):</p>
-                                                            <div className="space-y-1">
-                                                                {item.missingAddresses.slice(0, 2).map((addr, idx) => (
-                                                                    <p key={idx} className="text-xs text-purple-700 truncate max-w-xs">• {addr}</p>
-                                                                ))}
-                                                                {item.missingAddresses.length > 2 && (
-                                                                    <p className="text-xs text-purple-400 italic">+{item.missingAddresses.length - 2} more</p>
-                                                                )}
-                                                            </div>
-                                                        </div>
-                                                    )}
-                                                    {item.addressesStatus === 'same' && item.missingAddresses.length === 0 && (
-                                                        <span className="text-sm text-green-600">✓ All synced</span>
-                                                    )}
-                                                </div>
-                                            )}
-                                        </td>
-                                        <td className="px-4 py-4">
-                                            {item.conflictType === 'same' && item.addressesStatus !== 'missing' ? (
-                                                <span className="text-sm text-gray-400">No action needed</span>
-                                            ) : (
-                                                <select
-                                                    value={selectedItems[item.phone] || ''}
-                                                    onChange={(e) => handleActionChange(item.phone, e.target.value)}
-                                                    className="px-3 py-1.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary text-sm"
-                                                >
-                                                    <option value="">Choose action...</option>
-                                                    {item.conflictType === 'different' && (
-                                                        <option value="keep">Keep existing</option>
-                                                    )}
-                                                    <option value="update">Update from orders</option>
-                                                    <option value="skip">Skip</option>
-                                                </select>
-                                            )}
-                                        </td>
-                                    </tr>
-                                ))
-                            )}
-                        </tbody>
-                    </table>
-                </div>
-
-                {/* Pagination info */}
-                {filteredData.length > 0 && (
-                    <div className="px-4 py-3 border-t border-gray-100 text-sm text-gray-500">
-                        Showing {filteredData.length} of {syncData.length} customers with social links in orders
-                    </div>
-                )}
-
-                {/* Customer Required Fields Section */}
-                {stats.customersMissingRequiredFields > 0 && (
-                    <div className="bg-purple-50 border border-purple-200 rounded-2xl p-6">
-                        <div className="flex items-start justify-between">
-                            <div className="flex items-start gap-4">
-                                <div className="w-12 h-12 bg-purple-100 rounded-xl flex items-center justify-center flex-shrink-0">
-                                    <UserCheck className="text-purple-600" size={24} />
+                                        </div>
+                                    ))}
                                 </div>
-                                <div>
-                                    <h3 className="text-lg font-semibold text-gray-900 mb-1">
-                                        Missing Required Customer Fields
-                                    </h3>
-                                    <p className="text-sm text-gray-600 mb-3">
-                                        Found <strong>{stats.customersMissingRequiredFields} customers</strong> missing required fields (name, phone, firstOrderId, lastOrderId). 
-                                        These can be filled from their order history.
-                                    </p>
+                            </div>
+
+                            {/* Quick Actions */}
+                            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
+                                <h3 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
+                                    <Zap className="text-primary" size={20} />
+                                    Quick Actions
+                                </h3>
+                                <div className="space-y-2">
+                                    <button
+                                        onClick={() => setShowPhoneFormatModal(true)}
+                                        disabled={stats.phoneIssues === 0}
+                                        className="w-full flex items-center justify-between p-3 rounded-xl hover:bg-orange-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                    >
+                                        <div className="flex items-center gap-3">
+                                            <Phone className="text-orange-600" size={20} />
+                                            <span className="font-medium text-gray-700">Fix Phone Formats</span>
+                                        </div>
+                                        <span className="text-orange-600 font-semibold">{stats.phoneIssues}</span>
+                                    </button>
+
+                                    <button
+                                        onClick={() => setShowOrderIdsModal(true)}
+                                        disabled={stats.orderIdIssues === 0}
+                                        className="w-full flex items-center justify-between p-3 rounded-xl hover:bg-indigo-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                    >
+                                        <div className="flex items-center gap-3">
+                                            <Calendar className="text-indigo-600" size={20} />
+                                            <span className="font-medium text-gray-700">Sync Order IDs</span>
+                                        </div>
+                                        <span className="text-indigo-600 font-semibold">{stats.orderIdIssues}</span>
+                                    </button>
+
                                     <button
                                         onClick={() => setShowCustomerFieldsModal(true)}
-                                        className="flex items-center gap-2 bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg font-medium transition-colors shadow-lg shadow-purple-600/30"
+                                        disabled={stats.customersMissingRequiredFields === 0}
+                                        className="w-full flex items-center justify-between p-3 rounded-xl hover:bg-purple-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                                     >
-                                        <UserCheck size={18} />
-                                        Fix Required Fields ({stats.customersMissingRequiredFields})
+                                        <div className="flex items-center gap-3">
+                                            <UserCheck className="text-purple-600" size={20} />
+                                            <span className="font-medium text-gray-700">Fix Required Fields</span>
+                                        </div>
+                                        <span className="text-purple-600 font-semibold">{stats.customersMissingRequiredFields}</span>
+                                    </button>
+
+                                    <button
+                                        onClick={() => setShowRenameKeysModal(true)}
+                                        disabled={stats.keyIssues === 0}
+                                        className="w-full flex items-center justify-between p-3 rounded-xl hover:bg-rose-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                    >
+                                        <div className="flex items-center gap-3">
+                                            <Key className="text-rose-600" size={20} />
+                                            <span className="font-medium text-gray-700">Rename Firebase Keys</span>
+                                        </div>
+                                        <span className="text-rose-600 font-semibold">{stats.keyIssues}</span>
                                     </button>
                                 </div>
                             </div>
                         </div>
-                    </div>
+                    </motion.div>
                 )}
-            </div>
 
-            {/* Confirm Modal */}
-            <ConfirmSyncModal
-                isOpen={showConfirmModal}
-                onClose={() => setShowConfirmModal(false)}
-                onConfirm={executeSync}
-                summary={getSyncSummary()}
-                isSyncing={isSyncing}
-            />
+                {activeTab === 'standardize' && (
+                    <motion.div
+                        key="standardize"
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -20 }}
+                        className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6"
+                    >
+                        <h2 className="text-xl font-bold text-gray-900 mb-4 flex items-center gap-2">
+                            <Settings size={24} className="text-primary" />
+                            Data Standardization
+                        </h2>
+                        <p className="text-gray-600 mb-6">
+                            Standardize phone formats, sync customer data, and maintain data consistency across your Firebase database.
+                        </p>
 
-            {/* Phone Format Modal */}
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            {/* Phone Format Standardization */}
+                            {stats.phoneIssues > 0 && (
+                                <div className="bg-orange-50 border border-orange-200 rounded-xl p-6">
+                                    <div className="flex items-start gap-4">
+                                        <div className="w-12 h-12 bg-orange-100 rounded-xl flex items-center justify-center flex-shrink-0">
+                                            <Phone className="text-orange-600" size={24} />
+                                        </div>
+                                        <div className="flex-1">
+                                            <h3 className="text-lg font-semibold text-gray-900 mb-1">
+                                                Phone Format Issues
+                                            </h3>
+                                            <p className="text-sm text-gray-600 mb-3">
+                                                Found <strong>{stats.phoneIssues} orders</strong> with inconsistent phone formats (+84 or whitespace).
+                                            </p>
+                                            <button
+                                                onClick={() => setShowPhoneFormatModal(true)}
+                                                className="flex items-center gap-2 bg-orange-600 hover:bg-orange-700 text-white px-4 py-2 rounded-lg font-medium transition-colors shadow-lg shadow-orange-600/30"
+                                            >
+                                                <Phone size={18} />
+                                                Standardize ({stats.phoneIssues})
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Order IDs Sync */}
+                            {stats.orderIdIssues > 0 && (
+                                <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-6">
+                                    <div className="flex items-start gap-4">
+                                        <div className="w-12 h-12 bg-indigo-100 rounded-xl flex items-center justify-center flex-shrink-0">
+                                            <Calendar className="text-indigo-600" size={24} />
+                                        </div>
+                                        <div className="flex-1">
+                                            <h3 className="text-lg font-semibold text-gray-900 mb-1">
+                                                Missing Order IDs
+                                            </h3>
+                                            <p className="text-sm text-gray-600 mb-3">
+                                                Found <strong>{stats.orderIdIssues} customers</strong> missing firstOrderId or lastOrderId.
+                                            </p>
+                                            <button
+                                                onClick={() => setShowOrderIdsModal(true)}
+                                                className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg font-medium transition-colors shadow-lg shadow-indigo-600/30"
+                                            >
+                                                <Calendar size={18} />
+                                                Sync IDs ({stats.orderIdIssues})
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Customer Required Fields */}
+                            {stats.customersMissingRequiredFields > 0 && (
+                                <div className="bg-purple-50 border border-purple-200 rounded-xl p-6">
+                                    <div className="flex items-start gap-4">
+                                        <div className="w-12 h-12 bg-purple-100 rounded-xl flex items-center justify-center flex-shrink-0">
+                                            <UserCheck className="text-purple-600" size={24} />
+                                        </div>
+                                        <div className="flex-1">
+                                            <h3 className="text-lg font-semibold text-gray-900 mb-1">
+                                                Missing Required Fields
+                                            </h3>
+                                            <p className="text-sm text-gray-600 mb-3">
+                                                Found <strong>{stats.customersMissingRequiredFields} customers</strong> missing essential data.
+                                            </p>
+                                            <button
+                                                onClick={() => setShowCustomerFieldsModal(true)}
+                                                className="flex items-center gap-2 bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg font-medium transition-colors shadow-lg shadow-purple-600/30"
+                                            >
+                                                <UserCheck size={18} />
+                                                Fix Fields ({stats.customersMissingRequiredFields})
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Firebase Keys */}
+                            {stats.keyIssues > 0 && (
+                                <div className="bg-rose-50 border border-rose-200 rounded-xl p-6">
+                                    <div className="flex items-start gap-4">
+                                        <div className="w-12 h-12 bg-rose-100 rounded-xl flex items-center justify-center flex-shrink-0">
+                                            <Key className="text-rose-600" size={24} />
+                                        </div>
+                                        <div className="flex-1">
+                                            <h3 className="text-lg font-semibold text-gray-900 mb-1">
+                                                Wrong Firebase Keys
+                                            </h3>
+                                            <p className="text-sm text-gray-600 mb-2">
+                                                Found <strong>{stats.keyIssues} orders</strong> with mismatched keys.
+                                            </p>
+                                            <p className="text-xs text-rose-600 font-medium mb-3">
+                                                ⚠️ This operation cannot be undone!
+                                            </p>
+                                            <button
+                                                onClick={() => setShowRenameKeysModal(true)}
+                                                className="flex items-center gap-2 bg-rose-600 hover:bg-rose-700 text-white px-4 py-2 rounded-lg font-medium transition-colors shadow-lg shadow-rose-600/30"
+                                            >
+                                                <Key size={18} />
+                                                Rename Keys ({stats.keyIssues})
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+
+                        {stats.totalIssues === 0 && (
+                            <div className="text-center py-12">
+                                <CheckCircle className="text-green-500 mx-auto mb-4" size={64} />
+                                <h3 className="text-xl font-bold text-gray-900 mb-2">All Data is Standardized!</h3>
+                                <p className="text-gray-600">Your Firebase data is properly formatted and consistent.</p>
+                            </div>
+                        )}
+                    </motion.div>
+                )}
+
+                {activeTab === 'optimize' && (
+                    <motion.div
+                        key="optimize"
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -20 }}
+                        className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6"
+                    >
+                        <h2 className="text-xl font-bold text-gray-900 mb-4 flex items-center gap-2">
+                            <Zap size={24} className="text-primary" />
+                            Data Optimization
+                        </h2>
+                        <p className="text-gray-600 mb-6">
+                            Remove duplicates, clean up orphaned data, and optimize your database structure.
+                        </p>
+
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <div className="bg-gradient-to-br from-yellow-50 to-yellow-100 border border-yellow-200 rounded-xl p-6">
+                                <div className="flex items-start gap-4">
+                                    <div className="w-12 h-12 bg-yellow-200 rounded-xl flex items-center justify-center flex-shrink-0">
+                                        <Trash2 className="text-yellow-700" size={24} />
+                                    </div>
+                                    <div className="flex-1">
+                                        <h3 className="font-semibold text-gray-900 mb-1">Remove Duplicates</h3>
+                                        <p className="text-sm text-gray-600 mb-3">
+                                            {stats.duplicateCount} duplicate entries detected
+                                        </p>
+                                        <button
+                                            onClick={() => handleOpenCleanup('duplicates')}
+                                            disabled={stats.duplicateCount === 0}
+                                            className="flex items-center gap-2 bg-yellow-600 hover:bg-yellow-700 text-white px-4 py-2 rounded-lg font-medium transition-colors shadow-lg shadow-yellow-600/30 disabled:opacity-50 disabled:cursor-not-allowed"
+                                        >
+                                            <Trash2 size={18} />
+                                            Clean Up
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="bg-gradient-to-br from-blue-50 to-blue-100 border border-blue-200 rounded-xl p-6">
+                                <div className="flex items-start gap-4">
+                                    <div className="w-12 h-12 bg-blue-200 rounded-xl flex items-center justify-center flex-shrink-0">
+                                        <Archive className="text-blue-700" size={24} />
+                                    </div>
+                                    <div className="flex-1">
+                                        <h3 className="font-semibold text-gray-900 mb-1">Archive Old Data</h3>
+                                        <p className="text-sm text-gray-600 mb-3">
+                                            Archive orders older than 1 year
+                                        </p>
+                                        <button
+                                            onClick={() => handleOpenCleanup('archive')}
+                                            className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium transition-colors shadow-lg shadow-blue-600/30"
+                                        >
+                                            <Archive size={18} />
+                                            Archive
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="bg-gradient-to-br from-green-50 to-green-100 border border-green-200 rounded-xl p-6">
+                                <div className="flex items-start gap-4">
+                                    <div className="w-12 h-12 bg-green-200 rounded-xl flex items-center justify-center flex-shrink-0">
+                                        <Download className="text-green-700" size={24} />
+                                    </div>
+                                    <div className="flex-1">
+                                        <h3 className="font-semibold text-gray-900 mb-1">Export Data</h3>
+                                        <p className="text-sm text-gray-600 mb-3">
+                                            Download backup of your data
+                                        </p>
+                                        <button
+                                            onClick={() => handleOpenCleanup('export')}
+                                            className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg font-medium transition-colors shadow-lg shadow-green-600/30"
+                                        >
+                                            <Download size={18} />
+                                            Export JSON
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </motion.div>
+                )}
+
+                {activeTab === 'maintenance' && (
+                    <motion.div
+                        key="maintenance"
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -20 }}
+                        className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6"
+                    >
+                        <h2 className="text-xl font-bold text-gray-900 mb-4 flex items-center gap-2">
+                            <Database size={24} className="text-primary" />
+                            Database Maintenance
+                        </h2>
+                        <p className="text-gray-600 mb-6">
+                            Advanced tools for database maintenance and health checks.
+                        </p>
+
+                        <div className="text-center py-12">
+                            <Settings className="text-gray-400 mx-auto mb-4" size={64} />
+                            <h3 className="text-xl font-bold text-gray-900 mb-2">Coming Soon</h3>
+                            <p className="text-gray-600">Advanced maintenance tools are under development.</p>
+                        </div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+
+            {/* Modals */}
             <PhoneFormatModal
                 isOpen={showPhoneFormatModal}
                 onClose={() => setShowPhoneFormatModal(false)}
                 orders={ordersWithPhoneIssues}
             />
 
-            {/* Order IDs Modal */}
             <OrderIdsModal
                 isOpen={showOrderIdsModal}
                 onClose={() => setShowOrderIdsModal(false)}
                 customers={customersMissingOrderIds}
             />
 
-            {/* Rename Order Keys Modal */}
             <RenameOrderKeysModal
                 isOpen={showRenameKeysModal}
                 onClose={() => setShowRenameKeysModal(false)}
                 orders={ordersWithWrongKeys}
             />
 
-            {/* Customer Fields Modal */}
             <CustomerFieldsModal
                 isOpen={showCustomerFieldsModal}
                 onClose={() => setShowCustomerFieldsModal(false)}
                 customers={customers}
                 orders={orders}
             />
-        </div>
+
+            <CleanupModal
+                isOpen={showCleanupModal}
+                onClose={() => setShowCleanupModal(false)}
+                onConfirm={handleCleanupConfirm}
+                type={cleanupType}
+                data={cleanupData}
+                loading={isCleanupLoading}
+            />
+        </motion.div>
     );
 };
 

@@ -6,6 +6,8 @@ import AdvancedFilterModal from '../components/Orders/AdvancedFilterModal';
 import ShiftSummaryCards from '../components/Orders/ShiftSummaryCards';
 import OrderDetailsModal from '../components/Orders/OrderDetailsModal';
 import DraftListModal from '../components/Orders/DraftListModal';
+import SkeletonTable from '../components/Common/SkeletonTable';
+import SkeletonStats from '../components/Common/SkeletonStats';
 import { database } from '../firebase';
 import { ref, set, update, remove } from "firebase/database";
 import { useData } from '../contexts/DataContext';
@@ -26,7 +28,7 @@ const Orders = () => {
         return new Date((timestamp + 978307200) * 1000);
     };
 
-    const { orders, customers } = useData();
+    const { orders, customers, loading } = useData();
     const { showToast } = useToast();
     // Initialize with today's date in YYYY-MM-DD format (Local Time)
     const [selectedDate, setSelectedDate] = useState(formatLocalDate(new Date()));
@@ -304,6 +306,20 @@ const Orders = () => {
         }));
     };
 
+    // Helper to get color for time slot
+    const getTimeSlotColor = (slot) => {
+        if (!slot) return 'bg-white';
+        // Normalize slot string just in case
+        const s = slot.trim();
+        // Gradient of very light grays (increasing intensity)
+        if (s.includes("10:00") && s.includes("12:00")) return 'bg-[#fcfcfc]'; // Almost white
+        if (s.includes("12:00") && s.includes("14:00")) return 'bg-[#f7f7f7]'; // Very light gray
+        if (s.includes("14:00") && s.includes("16:00")) return 'bg-[#f2f2f2]'; // Light gray
+        if (s.includes("16:00") && s.includes("18:00")) return 'bg-[#ededed]'; // Visible gray
+        if (s.includes("18:00") && s.includes("20:00")) return 'bg-[#e8e8e8]'; // Darkest but still light
+        return 'bg-white';
+    };
+
     return (
         <div>
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
@@ -356,7 +372,11 @@ const Orders = () => {
                 />
             </div>
 
-            <ShiftSummaryCards orders={filteredAndSortedOrders} />
+            {loading ? (
+                <SkeletonStats count={3} className="mb-6" />
+            ) : (
+                <ShiftSummaryCards orders={filteredAndSortedOrders} />
+            )}
 
             <CreateOrderModal
                 isOpen={isModalOpen}
@@ -470,27 +490,31 @@ const Orders = () => {
                     </div>
                 </div>
 
-                <div className="overflow-x-auto">
-                    <table className="w-full">
-                        <thead className="bg-gray-50">
-                            <tr>
-                                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-[220px]">Customer</th>
-                                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-[180px]">Order Details</th>
-                                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-[120px]">Time</th>
-                                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-[110px]">Total</th>
-                                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-[90px]">Status</th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-gray-100">
-                            {filteredAndSortedOrders.length > 0 ? (
+                {loading ? (
+                    <SkeletonTable rows={8} columns={5} />
+                ) : (
+                    <div className="overflow-x-auto">
+                        <table className="w-full">
+                            <thead className="bg-gray-50">
+                                <tr>
+                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-[220px]">Customer</th>
+                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-[180px]">Order Details</th>
+                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-[120px]">Time</th>
+                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-[110px]">Total</th>
+                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-[90px]">Status</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-gray-100">
+                                {filteredAndSortedOrders.length > 0 ? (
                                 filteredAndSortedOrders.map((order, index) => (
                                     <tr
                                         key={order.id}
                                         onClick={() => handleOpenDetails(order)}
-                                        className={`transition-colors group cursor-pointer ${selectedOrderForDetails?.id === order.id
-                                            ? 'bg-blue-50 hover:bg-blue-100'
-                                            : 'hover:bg-gray-50'
-                                            }`}
+                                        className={`transition-colors group cursor-pointer ${
+                                            selectedOrderForDetails?.id === order.id
+                                                ? 'bg-blue-100 hover:bg-blue-200'
+                                                : `${getTimeSlotColor(order.deliveryTimeSlot || order.originalData?.deliveryTimeSlot)} hover:brightness-95`
+                                        }`}
                                     >
                                         {/* Customer Info */}
                                         <td className="px-4 py-4">
@@ -500,7 +524,7 @@ const Orders = () => {
                                                 </div>
                                                 <div className="min-w-0">
                                                     <div
-                                                        className="text-sm font-bold text-gray-900 truncate"
+                                                        className="text-sm font-bold text-gray-900 break-words max-w-[150px]"
                                                         title={order.customer.name}
                                                     >
                                                         <HighlightText text={order.customer.name} highlight={searchQuery} />
@@ -643,10 +667,11 @@ const Orders = () => {
                                         </div>
                                     </td>
                                 </tr>
-                            )}
-                        </tbody>
-                    </table>
-                </div>
+                                )}
+                            </tbody>
+                        </table>
+                    </div>
+                )}
 
 
                 {/* Daily Summary Footer */}

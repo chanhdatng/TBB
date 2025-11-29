@@ -39,10 +39,10 @@ const Sidebar = ({ isOpen, onClose }) => {
 
             {/* Sidebar */}
             <aside className={`
-        fixed lg:static inset-y-0 left-0 z-50 w-64 bg-white border-r border-gray-200 transform transition-transform duration-300 ease-in-out
-        ${isOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
+        fixed lg:static inset-y-0 left-0 z-50 bg-white border-r border-gray-200 transition-all duration-300 ease-in-out
+        ${isOpen ? 'translate-x-0 w-64' : '-translate-x-full w-64 lg:translate-x-0 lg:w-0 lg:overflow-hidden lg:border-none'}
       `}>
-                <div className="h-full flex flex-col">
+                <div className="h-full flex flex-col w-64">
                     {/* Logo */}
                     <div className="h-16 flex items-center justify-between px-6 border-b border-gray-100">
                         <div className="flex items-center gap-2">

@@ -325,7 +325,7 @@ const Dashboard = () => {
             </div>
 
             {/* Stats Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+            <div className="grid grid-cols-1 md:grid-cols-3 xl:grid-cols-4 gap-4 mb-6">
                 {/* Total Revenue */}
                 <div className="bg-primary rounded-2xl p-4 text-white shadow-lg shadow-primary/20 relative overflow-hidden group">
                     <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
@@ -447,9 +447,9 @@ const Dashboard = () => {
             </div>
 
             {/* Charts & Widgets Section */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+            <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 mb-6">
                 {/* Main Chart */}
-                <div className="lg:col-span-2">
+                <div className="xl:col-span-2">
                     <RevenueChart
                         data={chartData}
                         isVisible={isRevenueVisible}
@@ -459,7 +459,7 @@ const Dashboard = () => {
                 </div>
 
                 {/* Product Stats Card */}
-                <div className="lg:col-span-1">
+                <div className="xl:col-span-1">
                     <ProductStatsCard
                         data={stats.productStats}
                         totalSales={stats.totalOrders} // Or total items sold if preferred

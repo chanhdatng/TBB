@@ -2,6 +2,8 @@ import React, { useState, useMemo } from 'react';
 import { Search, Mail, Phone, MoreHorizontal, ChevronLeft, ChevronRight, Filter, ArrowUp, ArrowDown, Calendar, LayoutGrid, List, RotateCcw } from 'lucide-react';
 import { useData } from '../contexts/DataContext';
 import CustomerDetailsModal from '../components/Customers/CustomerDetailsModal';
+import SkeletonCard from '../components/Common/SkeletonCard';
+import SkeletonTable from '../components/Common/SkeletonTable';
 
 const Customers = () => {
     const { customers, orders, loading } = useData();
@@ -251,7 +253,17 @@ const Customers = () => {
                 </div>
             </div>
 
-            {viewMode === 'grid' ? (
+            {loading ? (
+                viewMode === 'grid' ? (
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                        {[...Array(9)].map((_, i) => (
+                            <SkeletonCard key={i} lines={5} showIcon={true} />
+                        ))}
+                    </div>
+                ) : (
+                    <SkeletonTable rows={10} columns={6} />
+                )
+            ) : viewMode === 'grid' ? (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                     {currentCustomers.length > 0 ? (
                         currentCustomers.map((customer) => (

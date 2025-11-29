@@ -11,6 +11,7 @@ import Settings from './pages/Settings';
 import DataSync from './pages/DataSync';
 import { DataProvider } from './contexts/DataContext';
 import ToastProvider from './contexts/ToastContext';
+import { Loader2 } from 'lucide-react';
 
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import Login from './pages/Login';
@@ -19,7 +20,14 @@ const ProtectedRoute = ({ children }) => {
   const { isAuthenticated, loading } = useAuth();
 
   if (loading) {
-    return <div>Loading...</div>;
+    return (
+      <div className="flex items-center justify-center h-screen bg-gray-50">
+        <div className="text-center">
+          <Loader2 className="w-8 h-8 animate-spin text-primary mx-auto mb-2" />
+          <p className="text-gray-600">Loading...</p>
+        </div>
+      </div>
+    );
   }
 
   if (!isAuthenticated) {

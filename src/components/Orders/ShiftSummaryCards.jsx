@@ -1,7 +1,11 @@
 import React, { useMemo } from 'react';
-import { Sun, Sunset, Moon, Package, Clock } from 'lucide-react';
+import { Sun, Sunset, Moon, Package, Clock, Copy } from 'lucide-react';
+import { copyToClipboard } from '../../utils/clipboard';
+import { useToast } from '../../contexts/ToastContext';
 
 const ShiftSummaryCards = ({ orders }) => {
+    const { showToast } = useToast();
+
     const summary = useMemo(() => {
         const shifts = {
             morning: { count: 0, cakes: {}, label: 'Morning', time: 'Before 12:00', icon: Sun, color: 'text-orange-500', bg: 'bg-orange-50' },
@@ -34,14 +38,42 @@ const ShiftSummaryCards = ({ orders }) => {
         return Object.values(shifts);
     }, [orders]);
 
+    const handleCopyShiftCakes = async (shift) => {
+        if (Object.keys(shift.cakes).length === 0) {
+            showToast('No cakes to copy for this shift', 'info');
+            return;
+        }
+
+        const lines = [`${shift.label} Shift Cakes:`];
+        Object.entries(shift.cakes).forEach(([cake, quantity]) => {
+            lines.push(`- ${cake}: ${quantity}`);
+        });
+        
+        const text = lines.join('\n');
+        const success = await copyToClipboard(text);
+        
+        if (success) {
+            showToast(`Copied ${shift.label} cakes to clipboard!`, 'success');
+        } else {
+            showToast('Failed to copy to clipboard', 'error');
+        }
+    };
+
     return (
         <div className="grid grid-cols-3 gap-2 md:gap-4 mb-6">
             {summary.map((shift) => (
-                <div key={shift.label} className="bg-white p-2 sm:p-4 rounded-xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow">
+                <div key={shift.label} className="bg-white p-2 sm:p-4 rounded-xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow group">
                     <div className="flex items-center justify-between mb-2 sm:mb-3">
                         <div className="flex items-center gap-2 sm:gap-3">
-                            <div className={`w-8 h-8 sm:w-10 sm:h-10 rounded-full ${shift.bg} flex items-center justify-center ${shift.color}`}>
+                            <div 
+                                onClick={() => handleCopyShiftCakes(shift)}
+                                className={`w-8 h-8 sm:w-10 sm:h-10 rounded-full ${shift.bg} flex items-center justify-center ${shift.color} cursor-pointer hover:scale-110 active:scale-95 transition-transform relative`}
+                                title="Click to copy cake list"
+                            >
                                 <shift.icon size={16} className="sm:w-5 sm:h-5" />
+                                <div className="absolute -bottom-1 -right-1 bg-white rounded-full p-0.5 shadow-sm opacity-0 group-hover:opacity-100 transition-opacity">
+                                    <Copy size={10} className="text-gray-400" />
+                                </div>
                             </div>
                             <div>
                                 <h3 className="font-bold text-gray-900 hidden sm:block">{shift.label}</h3>
@@ -80,3 +112,4 @@ const ShiftSummaryCards = ({ orders }) => {
 };
 
 export default ShiftSummaryCards;
+
