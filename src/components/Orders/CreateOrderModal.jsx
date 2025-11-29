@@ -474,7 +474,11 @@ const CreateOrderModal = ({ isOpen, onClose, onCreateOrder, editingOrder, onUpda
                                             value={customer.phone}
                                             onChange={(e) => {
                                                 const newPhone = e.target.value;
-                                                const foundCustomer = customers.find(c => c.phone === newPhone);
+                                                const normalize = (p) => p ? String(p).replace(/\D/g, '') : '';
+                                                const normalizedNewPhone = normalize(newPhone);
+                                                
+                                                const foundCustomer = customers.find(c => normalize(c.phone) === normalizedNewPhone);
+                                                
                                                 setCustomer({
                                                     ...customer,
                                                     phone: newPhone,
