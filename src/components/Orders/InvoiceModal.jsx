@@ -1,13 +1,17 @@
 import React, { useRef, useState } from 'react';
-import { X, Printer, Download, Share2, ZoomIn, ZoomOut, Maximize } from 'lucide-react';
+import { X, Printer, Download, Share2, ZoomIn, ZoomOut, Maximize, Copy } from 'lucide-react';
 import { toPng } from 'html-to-image';
 import { useToast } from '../../contexts/ToastContext';
 
 const InvoiceModal = ({ isOpen, onClose, order }) => {
     const printRef = useRef();
+    const qrRef = useRef();
+
     const [isSharing, setIsSharing] = useState(false);
     const [zoom, setZoom] = useState(0.8);
     const [qrBase64, setQrBase64] = useState(null);
+    const [invoiceImage, setInvoiceImage] = useState(null);
+    const [isGenerating, setIsGenerating] = useState(false);
 
     const { showToast } = useToast();
 
@@ -39,6 +43,8 @@ const InvoiceModal = ({ isOpen, onClose, order }) => {
         if (isOpen) {
             calculateZoom();
             window.addEventListener('resize', calculateZoom);
+            setInvoiceImage(null); // Reset image on open
+            setIsGenerating(true); // Start generating
             return () => window.removeEventListener('resize', calculateZoom);
         }
     }, [isOpen]);
@@ -85,46 +91,77 @@ const InvoiceModal = ({ isOpen, onClose, order }) => {
         generateQrBase64();
     }, [qrUrl]);
 
+    // Generate Invoice Image when QR is ready
+    const generateInvoiceImage = async () => {
+        if (!printRef.current) return;
+
+        try {
+            // Wait a bit for layout to stabilize
+            await new Promise(resolve => setTimeout(resolve, 500));
+
+            const dataUrl = await toPng(printRef.current, {
+                cacheBust: false,
+                backgroundColor: '#ffffff',
+                pixelRatio: 3, // High quality
+                style: {
+                    transform: 'none',
+                    boxShadow: 'none'
+                }
+            });
+            setInvoiceImage(dataUrl);
+            setIsGenerating(false);
+        } catch (error) {
+            console.error("Error generating invoice image:", error);
+            setIsGenerating(false);
+            showToast("Không thể tạo ảnh hóa đơn", "error");
+        }
+    };
+
+    // Trigger generation when QR image loads
+    const handleQrLoad = () => {
+        generateInvoiceImage();
+    };
+
     const handlePrint = () => {
-        window.print();
+        if (invoiceImage) {
+            const printWindow = window.open('', '_blank');
+            printWindow.document.write(`
+                <html>
+                    <head>
+                        <title>Print Invoice</title>
+                        <style>
+                            body { margin: 0; display: flex; justify-content: center; align-items: center; }
+                            img { max-width: 100%; height: auto; }
+                            @media print {
+                                body { display: block; }
+                                img { width: 100%; }
+                            }
+                        </style>
+                    </head>
+                    <body>
+                        <img src="${invoiceImage}" onload="window.print();window.close()" />
+                    </body>
+                </html>
+            `);
+            printWindow.document.close();
+        } else {
+            window.print(); // Fallback
+        }
     };
 
     const handleZoomIn = () => setZoom(prev => Math.min(prev + 0.1, 1.5));
     const handleZoomOut = () => setZoom(prev => Math.max(prev - 0.1, 0.4));
     const handleFitWindow = () => calculateZoom();
 
-    if (!isOpen || !order) return null;
 
-    const qrRef = useRef();
 
     const handleShare = async () => {
-        if (!printRef.current || isSharing) return;
+        if (!invoiceImage || isSharing) return;
 
         setIsSharing(true);
         try {
-            // Ensure QR code is loaded
-            if (qrRef.current) {
-                if (!qrRef.current.complete) {
-                    await new Promise((resolve) => {
-                        qrRef.current.onload = resolve;
-                        qrRef.current.onerror = resolve; // Proceed even if error, to avoid hanging
-                    });
-                }
-            }
-
-            // Capture the invoice content using html-to-image
-            const dataUrl = await toPng(printRef.current, {
-                cacheBust: false,
-                backgroundColor: '#ffffff',
-                pixelRatio: 5, // FHD quality (approx 1680x2380px for A5)
-                style: {
-                    transform: 'none', // Reset transform for capture
-                    boxShadow: 'none'
-                }
-            });
-
             // Convert Base64 Data URL to Blob
-            const res = await fetch(dataUrl);
+            const res = await fetch(invoiceImage);
             const blob = await res.blob();
             const file = new File([blob], `invoice_${order.id}.png`, { type: 'image/png' });
 
@@ -140,21 +177,19 @@ const InvoiceModal = ({ isOpen, onClose, order }) => {
                 } catch (shareError) {
                     if (shareError.name !== 'AbortError') {
                         console.error('Share failed:', shareError);
-                        // Fallback to clipboard/download if share fails (but not if cancelled)
-                        await copyToClipboardOrDownload(blob, dataUrl);
+                        await copyToClipboardOrDownload(blob, invoiceImage);
                     }
                 }
             } else {
-                // Fallback for desktop or unsupported browsers
-                await copyToClipboardOrDownload(blob, dataUrl);
+                await copyToClipboardOrDownload(blob, invoiceImage);
             }
 
             setIsSharing(false);
 
         } catch (error) {
-            console.error('Error generating invoice image:', error);
+            console.error('Error sharing invoice:', error);
             setIsSharing(false);
-            showToast('Không thể tạo ảnh hóa đơn. Vui lòng thử lại.', 'error');
+            showToast('Không thể chia sẻ hóa đơn. Vui lòng thử lại.', 'error');
         }
     };
 
@@ -168,13 +203,10 @@ const InvoiceModal = ({ isOpen, onClose, order }) => {
             showToast('Đã sao chép ảnh hóa đơn vào clipboard', 'success');
         } catch (clipboardError) {
             console.error('Clipboard write failed:', clipboardError);
-            // Fallback to download if clipboard fails
             showToast('Không thể sao chép vào clipboard. Đang tải xuống...', 'warning');
             downloadImage(dataUrl);
         }
     };
-
-
 
     const downloadImage = (dataUrl) => {
         const link = document.createElement('a');
@@ -183,260 +215,247 @@ const InvoiceModal = ({ isOpen, onClose, order }) => {
         link.click();
     };
 
+    const handleCopy = async () => {
+        if (!invoiceImage) return;
+        try {
+            const res = await fetch(invoiceImage);
+            const blob = await res.blob();
+            await copyToClipboardOrDownload(blob, invoiceImage);
+        } catch (error) {
+            console.error('Error copying invoice:', error);
+            showToast('Không thể sao chép hóa đơn', 'error');
+        }
+    };
+
+    if (!isOpen || !order) return null;
+
     return (
         <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm print:p-0 print:bg-white">
             <div
                 className="bg-white rounded-xl shadow-2xl w-full max-w-[600px] overflow-hidden flex flex-col h-[90vh] print:shadow-none print:max-w-none print:max-h-none print:w-full print:h-full print:rounded-none"
                 onClick={(e) => e.stopPropagation()}
             >
-                {/* Header Actions - Hidden in Print */}
+                {/* Header Actions */}
                 <div className="flex justify-between items-center p-4 border-b border-gray-100 print:hidden bg-gray-50 z-10">
                     <div className="flex items-center gap-4">
                         <h3 className="font-bold text-gray-700">Invoice Preview</h3>
                         {/* Zoom Controls */}
                         <div className="flex items-center bg-white rounded-lg border border-gray-200 p-1">
-                            <button
-                                onClick={handleZoomOut}
-                                className="p-1.5 hover:bg-gray-100 rounded-md text-gray-600 transition-colors"
-                                title="Zoom Out"
-                            >
-                                <ZoomOut size={16} />
-                            </button>
-                            <button
-                                onClick={handleZoomIn}
-                                className="p-1.5 hover:bg-gray-100 rounded-md text-gray-600 transition-colors"
-                                title="Zoom In"
-                            >
-                                <ZoomIn size={16} />
-                            </button>
+                            <button onClick={handleZoomOut} className="p-1.5 hover:bg-gray-100 rounded-md text-gray-600 transition-colors" title="Zoom Out"><ZoomOut size={16} /></button>
+                            <button onClick={handleZoomIn} className="p-1.5 hover:bg-gray-100 rounded-md text-gray-600 transition-colors" title="Zoom In"><ZoomIn size={16} /></button>
                             <div className="w-px h-4 bg-gray-200 mx-1"></div>
-                            <button
-                                onClick={handleFitWindow}
-                                className="p-1.5 hover:bg-gray-100 rounded-md text-gray-600 transition-colors"
-                                title="Fit to Window"
-                            >
-                                <Maximize size={16} />
-                            </button>
+                            <button onClick={handleFitWindow} className="p-1.5 hover:bg-gray-100 rounded-md text-gray-600 transition-colors" title="Fit to Window"><Maximize size={16} /></button>
                         </div>
                     </div>
                     <div className="flex gap-2">
                         <button
                             onClick={handleShare}
-                            disabled={isSharing}
+                            disabled={!invoiceImage || isSharing}
                             className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50"
                         >
-                            {isSharing ? (
-                                <span className="animate-pulse">Generating...</span>
-                            ) : (
-                                <>
-                                    <Share2 size={18} /> Share
-                                </>
-                            )}
+                            {isSharing ? <span className="animate-pulse">Sharing...</span> : <><Share2 size={18} /> Share</>}
+                        </button>
+                        <button
+                            onClick={handleCopy}
+                            disabled={!invoiceImage}
+                            className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50"
+                        >
+                            <Copy size={18} /> Copy
                         </button>
                         <button
                             onClick={handlePrint}
-                            className="flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors"
+                            disabled={!invoiceImage}
+                            className="flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50"
                         >
                             <Printer size={18} /> Print
                         </button>
-                        <button
-                            onClick={onClose}
-                            className="p-2 text-gray-500 hover:bg-gray-200 rounded-lg transition-colors"
+                        <button onClick={onClose} className="p-2 text-gray-500 hover:bg-gray-200 rounded-lg transition-colors"><X size={20} /></button>
+                    </div>
+                </div>
+
+                {/* Content Area */}
+                <div className="flex-1 overflow-auto bg-gray-100 p-4 flex justify-center items-start relative">
+                    {/* Loading State */}
+                    {isGenerating && (
+                        <div className="absolute inset-0 flex flex-col items-center justify-center bg-white/80 z-20">
+                            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mb-4"></div>
+                            <p className="text-gray-500 font-medium">Đang tạo hóa đơn...</p>
+                        </div>
+                    )}
+
+                    {/* Generated Image Display */}
+                    {invoiceImage && (
+                        <div 
+                            className="bg-white shadow-xl transition-transform origin-top duration-200"
+                            style={{ transform: `scale(${zoom})` }}
                         >
-                            <X size={20} />
-                        </button>
-                    </div>
-                </div>
-
-                {/* Printable Content Wrapper */}
-                <div className="flex-1 overflow-auto bg-gray-100 p-4 flex justify-center items-start print:p-0 print:bg-white print:block">
-                    <div
-                        ref={printRef}
-                        id="invoice-content"
-                        className="bg-white shadow-xl transition-transform origin-top duration-200 print:shadow-none print:transform-none print:w-full print:m-0"
-                        style={{
-                            transform: `scale(${zoom})`,
-                            width: '148mm', // A5 Width
-                            minHeight: '210mm', // A5 Height
-                            padding: '24px' // Reduced padding for A5
-                        }}
-                    >
-                        {/* Invoice Header */}
-                        <div className="flex justify-between items-start mb-6 border-b border-gray-200 pb-4">
-                            <div>
-                                <h1 className="text-2xl font-bold text-primary mb-1">HÓA ĐƠN</h1>
-                                <p className="text-sm text-gray-500 font-mono">#{order.id.slice(-6).toUpperCase()}</p>
-                                <p className="text-xs text-gray-400 mt-0.5">{order.timeline.ordered.date} • {order.timeline.ordered.time}</p>
-                            </div>
-                            <div className="text-right">
-                                <h2 className="text-lg font-bold text-gray-800">The Butter Bake</h2>
-                                <p className="text-xs text-gray-600">32A Nguyễn Bá Huân, Thảo Điền</p>
-                                <p className="text-xs text-gray-600">SĐT: 0868836165</p>
-                            </div>
+                            <img src={invoiceImage} alt="Invoice" className="max-w-none" style={{ width: '148mm', height: 'auto' }} />
                         </div>
+                    )}
 
-                        {/* Customer Info & Calendar */}
-                        <div className="mb-6 border border-gray-200 rounded-lg p-3 print:border-gray-300 flex justify-between items-start gap-3">
-                            {/* Left: Customer Info (Vertical) */}
-                            <div className="flex-1 space-y-2">
+                    {/* Hidden Source Content for Generation */}
+                    <div className="absolute left-[-9999px] top-0">
+                        <div
+                            ref={printRef}
+                            id="invoice-content"
+                            className="bg-white"
+                            style={{
+                                width: '148mm',
+                                minHeight: '210mm',
+                                padding: '24px'
+                            }}
+                        >
+                            {/* Invoice Header */}
+                            <div className="flex justify-between items-start mb-6 border-b border-gray-200 pb-4">
                                 <div>
-                                    <span className="text-gray-500 text-[10px] uppercase tracking-wider block mb-0.5">Khách hàng</span>
-                                    <p className="font-bold text-gray-900 text-base">{order.customer.name}</p>
+                                    <h1 className="text-2xl font-bold text-primary mb-1">HÓA ĐƠN</h1>
+                                    <p className="text-sm text-gray-500 font-mono">#{order.id.slice(-6).toUpperCase()}</p>
+                                    <p className="text-xs text-gray-400 mt-0.5">{order.timeline.ordered.date} • {order.timeline.ordered.time}</p>
                                 </div>
-                                <div>
-                                    <span className="text-gray-500 text-[10px] uppercase tracking-wider block mb-0.5">Điện thoại</span>
-                                    <p className="font-semibold text-gray-900 font-mono text-sm">{order.customer.phone}</p>
-                                </div>
-                                <div>
-                                    <span className="text-gray-500 text-[10px] uppercase tracking-wider block mb-0.5">Địa chỉ</span>
-                                    <p className="font-medium text-gray-900 leading-tight text-sm">{order.customer.address}</p>
+                                <div className="text-right">
+                                    <h2 className="text-lg font-bold text-gray-800">The Butter Bake</h2>
+                                    <p className="text-xs text-gray-600">32A Nguyễn Bá Huân, Thảo Điền</p>
+                                    <p className="text-xs text-gray-600">SĐT: 0868836165</p>
                                 </div>
                             </div>
 
-                            {/* Right: Calendar Component */}
-                            <div className="flex flex-col items-center">
-                                <span className="text-gray-500 text-[10px] uppercase tracking-wider mb-1">Thời gian nhận</span>
-                                <div className="bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden w-20 text-center print:border-gray-300">
-                                    <div className="bg-red-500 text-white text-[10px] font-bold py-0.5 uppercase tracking-wide">
-                                        {order.timeline.received.raw.toLocaleDateString('vi-VN', { month: 'long' })}
+                            {/* Customer Info & Calendar */}
+                            <div className="mb-6 border border-gray-200 rounded-lg p-3 flex justify-between items-start gap-3">
+                                {/* Left: Customer Info (Vertical) */}
+                                <div className="flex-1 space-y-2">
+                                    <div>
+                                        <span className="text-gray-500 text-[10px] uppercase tracking-wider block mb-0.5">Khách hàng</span>
+                                        <p className="font-bold text-gray-900 text-base">{order.customer.name}</p>
                                     </div>
-                                    <div className="py-1">
-                                        <span className="text-2xl font-bold text-gray-900 block leading-none">
-                                            {order.timeline.received.raw.getDate()}
-                                        </span>
-                                        <span className="text-[10px] text-gray-500 uppercase font-medium mt-0.5 block">
-                                            {order.timeline.received.raw.toLocaleDateString('vi-VN', { weekday: 'short' })}
-                                        </span>
+                                    <div>
+                                        <span className="text-gray-500 text-[10px] uppercase tracking-wider block mb-0.5">Điện thoại</span>
+                                        <p className="font-semibold text-gray-900 font-mono text-sm">{order.customer.phone}</p>
+                                    </div>
+                                    <div>
+                                        <span className="text-gray-500 text-[10px] uppercase tracking-wider block mb-0.5">Địa chỉ</span>
+                                        <p className="font-medium text-gray-900 leading-tight text-sm">{order.customer.address}</p>
                                     </div>
                                 </div>
-                                <div className="mt-1 text-center">
-                                    <span className="inline-block px-1.5 py-0.5 bg-gray-100 rounded text-[10px] font-bold text-gray-700 print:bg-transparent print:border print:border-gray-200">
-                                        {order.timeline.received.time}
-                                    </span>
+
+                                {/* Right: Calendar Component */}
+                                <div className="flex flex-col items-center">
+                                    <span className="text-gray-500 text-[10px] uppercase tracking-wider mb-1">Thời gian nhận</span>
+                                    <div className="bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden w-20 text-center">
+                                        <div className="bg-red-500 text-white text-[10px] font-bold py-0.5 uppercase tracking-wide">
+                                            {order.timeline.received.raw.toLocaleDateString('vi-VN', { month: 'long' })}
+                                        </div>
+                                        <div className="py-1">
+                                            <span className="text-2xl font-bold text-gray-900 block leading-none">
+                                                {order.timeline.received.raw.getDate()}
+                                            </span>
+                                            <span className="text-[10px] text-gray-500 uppercase font-medium mt-0.5 block">
+                                                {order.timeline.received.raw.toLocaleDateString('vi-VN', { weekday: 'short' })}
+                                            </span>
+                                        </div>
+                                    </div>
+                                    <div className="mt-1 text-center">
+                                        <span className="inline-block px-1.5 py-0.5 bg-gray-100 rounded text-[10px] font-bold text-gray-700">
+                                            {order.timeline.received.time}
+                                        </span>
+                                    </div>
                                 </div>
                             </div>
-                        </div>
 
-                        {/* Items Table */}
-                        <div className="mb-6">
-                            <table className="w-full text-xs">
-                                <thead>
-                                    <tr className="bg-gray-50 border-y border-gray-200 print:bg-gray-100">
-                                        <th className="py-2 px-2 text-left font-semibold text-gray-700">STT</th>
-                                        <th className="py-2 px-2 text-left font-semibold text-gray-700">Tên món</th>
-                                        <th className="py-2 px-2 text-center font-semibold text-gray-700">SL</th>
-                                        <th className="py-2 px-2 text-right font-semibold text-gray-700">Đơn giá</th>
-                                        <th className="py-2 px-2 text-right font-semibold text-gray-700">Thành tiền</th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-gray-100">
-                                    {order.items.map((item, index) => (
-                                        <tr key={index}>
-                                            <td className="py-2 px-2 text-gray-500">{index + 1}</td>
-                                            <td className="py-2 px-2 text-gray-900 font-medium">{item.name}</td>
-                                            <td className="py-2 px-2 text-center text-gray-900">{item.amount}</td>
-                                            <td className="py-2 px-2 text-right text-gray-900">
-                                                {new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(item.price)}
-                                            </td>
-                                            <td className="py-2 px-2 text-right text-gray-900 font-medium">
-                                                {new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(item.price * item.amount)}
-                                            </td>
+                            {/* Items Table */}
+                            <div className="mb-6">
+                                <table className="w-full text-xs">
+                                    <thead>
+                                        <tr className="bg-gray-50 border-y border-gray-200">
+                                            <th className="py-2 px-2 text-left font-semibold text-gray-700">STT</th>
+                                            <th className="py-2 px-2 text-left font-semibold text-gray-700">Tên món</th>
+                                            <th className="py-2 px-2 text-center font-semibold text-gray-700">SL</th>
+                                            <th className="py-2 px-2 text-right font-semibold text-gray-700">Đơn giá</th>
+                                            <th className="py-2 px-2 text-right font-semibold text-gray-700">Thành tiền</th>
                                         </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        </div>
-
-                        {/* Footer Section: QR & Totals */}
-                        <div className="flex flex-col md:flex-row gap-8 print:flex-row">
-                            {/* QR Code */}
-                            <div className="w-full md:w-1/2 print:w-1/2 flex flex-col items-center justify-center p-4 bg-white border-2 border-dashed border-gray-200 rounded-xl print:border-gray-300">
-                                <img
-                                    ref={qrRef}
-                                    src={qrBase64 || qrUrl}
-                                    alt="Payment QR Code"
-                                    className="w-32 h-32 object-contain mb-2"
-                                    crossOrigin="anonymous"
-                                />
-                                <p className="text-[10px] text-gray-500 text-center">Quét mã để thanh toán</p>
-                                <p className="text-[10px] font-mono text-gray-400 mt-1">{bankId} - {accountNo}</p>
+                                    </thead>
+                                    <tbody className="divide-y divide-gray-100">
+                                        {order.items.map((item, index) => (
+                                            <tr key={index}>
+                                                <td className="py-2 px-2 text-gray-500">{index + 1}</td>
+                                                <td className="py-2 px-2 text-gray-900 font-medium">{item.name}</td>
+                                                <td className="py-2 px-2 text-center text-gray-900">{item.amount}</td>
+                                                <td className="py-2 px-2 text-right text-gray-900">
+                                                    {new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(item.price)}
+                                                </td>
+                                                <td className="py-2 px-2 text-right text-gray-900 font-medium">
+                                                    {new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(item.price * item.amount)}
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
                             </div>
 
-                            {/* Totals */}
-                            <div className="w-full md:w-1/2 print:w-1/2 space-y-2">
-                                <div className="flex justify-between text-xs">
-                                    <span className="text-gray-500">Tạm tính:</span>
-                                    <span className="font-medium text-gray-900">
-                                        {new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(subtotal)}
-                                    </span>
-                                </div>
-                                <div className="flex justify-between text-xs">
-                                    <span className="text-gray-500">Phí vận chuyển:</span>
-                                    <span className="font-medium text-gray-900">
-                                        {new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(shipping)}
-                                    </span>
-                                </div>
-                                {otherFee > 0 && (
-                                    <div className="flex justify-between text-xs">
-                                        <span className="text-gray-500">Phí khác:</span>
-                                        <span className="font-medium text-gray-900">
-                                            {new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(otherFee)}
-                                        </span>
-                                    </div>
-                                )}
-                                {discount > 0 && (
-                                    <div className="flex justify-between text-xs">
-                                        <span className="text-gray-500">Giảm giá:</span>
-                                        <span className="font-medium text-red-500">
-                                            -{new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(discount)}
-                                        </span>
-                                    </div>
-                                )}
-                                <div className="pt-2 border-t border-gray-200 mt-1">
-                                    <div className="flex justify-between items-end">
-                                        <span className="text-sm font-bold text-gray-900">Tổng cộng:</span>
-                                        <span className="text-xl font-bold text-primary">
-                                            {new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(total)}
-                                        </span>
-                                    </div>
+                            {/* Footer Section: QR & Totals */}
+                            <div className="flex flex-col md:flex-row gap-8">
+                                {/* QR Code */}
+                                <div className="w-full md:w-1/2 flex flex-col items-center justify-center p-4 bg-white border-2 border-dashed border-gray-200 rounded-xl">
+                                    <img
+                                        ref={qrRef}
+                                        src={qrBase64 || qrUrl}
+                                        alt="Payment QR Code"
+                                        className="w-32 h-32 object-contain mb-2"
+                                        crossOrigin="anonymous"
+                                        onLoad={handleQrLoad}
+                                        onError={handleQrLoad} // Continue even if QR fails
+                                    />
+                                    <p className="text-[10px] text-gray-500 text-center">Quét mã để thanh toán</p>
+                                    <p className="text-[10px] font-mono text-gray-400 mt-1">{bankId} - {accountNo}</p>
                                 </div>
 
-                                <div className="mt-6 text-center pt-6 border-t border-gray-100 print:mt-8">
-                                    <p className="text-sm font-medium text-gray-900">Cảm ơn quý khách!</p>
-                                    <p className="text-xs text-gray-500 mt-1">Hẹn gặp lại</p>
+                                {/* Totals */}
+                                <div className="w-full md:w-1/2 space-y-2">
+                                    <div className="flex justify-between text-xs">
+                                        <span className="text-gray-500">Tạm tính:</span>
+                                        <span className="font-medium text-gray-900">
+                                            {new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(subtotal)}
+                                        </span>
+                                    </div>
+                                    <div className="flex justify-between text-xs">
+                                        <span className="text-gray-500">Phí vận chuyển:</span>
+                                        <span className="font-medium text-gray-900">
+                                            {new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(shipping)}
+                                        </span>
+                                    </div>
+                                    {otherFee > 0 && (
+                                        <div className="flex justify-between text-xs">
+                                            <span className="text-gray-500">Phí khác:</span>
+                                            <span className="font-medium text-gray-900">
+                                                {new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(otherFee)}
+                                            </span>
+                                        </div>
+                                    )}
+                                    {discount > 0 && (
+                                        <div className="flex justify-between text-xs">
+                                            <span className="text-gray-500">Giảm giá:</span>
+                                            <span className="font-medium text-red-500">
+                                                -{new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(discount)}
+                                            </span>
+                                        </div>
+                                    )}
+                                    <div className="pt-2 border-t border-gray-200 mt-1">
+                                        <div className="flex justify-between items-end">
+                                            <span className="text-sm font-bold text-gray-900">Tổng cộng:</span>
+                                            <span className="text-xl font-bold text-primary">
+                                                {new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(total)}
+                                            </span>
+                                        </div>
+                                    </div>
+
+                                    <div className="mt-6 text-center pt-6 border-t border-gray-100">
+                                        <p className="text-sm font-medium text-gray-900">Cảm ơn quý khách!</p>
+                                        <p className="text-xs text-gray-500 mt-1">Hẹn gặp lại</p>
+                                    </div>
                                 </div>
                             </div>
                         </div>
                     </div>
                 </div>
-
-                <style>
-                    {`
-                        @media print {
-                            body * {
-                                visibility: hidden;
-                            }
-                            #invoice-content, #invoice-content * {
-                                visibility: visible;
-                            }
-                            #invoice-content {
-                                position: absolute;
-                                left: 0;
-                                top: 0;
-                                width: 100% !important;
-                                height: auto !important;
-                                margin: 0 !important;
-                                padding: 20px !important;
-                                transform: none !important;
-                                box-shadow: none !important;
-                            }
-                            /* Hide scrollbars in print */
-                            ::-webkit-scrollbar {
-                                display: none;
-                            }
-                        }
-                    `}
-                </style>
             </div>
         </div>
     );
