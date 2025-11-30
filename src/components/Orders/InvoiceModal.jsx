@@ -114,19 +114,27 @@ const InvoiceModal = ({ isOpen, onClose, order }) => {
             // Convert Base64 Data URL to Blob
             const res = await fetch(dataUrl);
             const blob = await res.blob();
+            const file = new File([blob], `invoice_${order.id}.png`, { type: 'image/png' });
 
-            try {
-                await navigator.clipboard.write([
-                    new ClipboardItem({
-                        [blob.type]: blob
-                    })
-                ]);
-                showToast('Đã sao chép ảnh hóa đơn vào clipboard', 'success');
-            } catch (clipboardError) {
-                console.error('Clipboard write failed:', clipboardError);
-                // Fallback to download if clipboard fails
-                showToast('Không thể sao chép vào clipboard. Đang tải xuống...', 'warning');
-                downloadImage(dataUrl);
+            // Check if Web Share API is supported and can share files
+            if (navigator.canShare && navigator.canShare({ files: [file] })) {
+                try {
+                    await navigator.share({
+                        files: [file],
+                        title: `Hóa đơn #${order.id}`,
+                        text: `Hóa đơn đơn hàng #${order.id} từ The Butter Bake`
+                    });
+                    showToast('Đã chia sẻ hóa đơn thành công', 'success');
+                } catch (shareError) {
+                    if (shareError.name !== 'AbortError') {
+                        console.error('Share failed:', shareError);
+                        // Fallback to clipboard/download if share fails (but not if cancelled)
+                        await copyToClipboardOrDownload(blob, dataUrl);
+                    }
+                }
+            } else {
+                // Fallback for desktop or unsupported browsers
+                await copyToClipboardOrDownload(blob, dataUrl);
             }
 
             setIsSharing(false);
@@ -137,6 +145,24 @@ const InvoiceModal = ({ isOpen, onClose, order }) => {
             showToast('Không thể tạo ảnh hóa đơn. Vui lòng thử lại.', 'error');
         }
     };
+
+    const copyToClipboardOrDownload = async (blob, dataUrl) => {
+        try {
+            await navigator.clipboard.write([
+                new ClipboardItem({
+                    [blob.type]: blob
+                })
+            ]);
+            showToast('Đã sao chép ảnh hóa đơn vào clipboard', 'success');
+        } catch (clipboardError) {
+            console.error('Clipboard write failed:', clipboardError);
+            // Fallback to download if clipboard fails
+            showToast('Không thể sao chép vào clipboard. Đang tải xuống...', 'warning');
+            downloadImage(dataUrl);
+        }
+    };
+
+
 
     const downloadImage = (dataUrl) => {
         const link = document.createElement('a');
