@@ -7,6 +7,9 @@ const InvoiceModal = ({ isOpen, onClose, order }) => {
     const printRef = useRef();
     const [isSharing, setIsSharing] = useState(false);
     const [zoom, setZoom] = useState(0.8);
+    const [qrBase64, setQrBase64] = useState(null);
+
+    const { showToast } = useToast();
 
     const calculateZoom = () => {
         const invoiceHeightPx = 794; // Approx A5 height in pixels (at 96 DPI)
@@ -40,22 +43,47 @@ const InvoiceModal = ({ isOpen, onClose, order }) => {
         }
     }, [isOpen]);
 
-    if (!isOpen || !order) return null;
+    // Calculate totals and QR URL safely using useMemo
+    const { total, subtotal, shipping, otherFee, discount, qrUrl, bankId, accountNo } = React.useMemo(() => {
+        if (!order) return { 
+            total: 0, subtotal: 0, shipping: 0, otherFee: 0, discount: 0, 
+            qrUrl: '', bankId: '', accountNo: '' 
+        };
 
-    // Calculate totals
-    const subtotal = order.items.reduce((sum, item) => sum + (item.price * item.amount), 0);
-    const shipping = order.originalData?.shipFee || 0;
-    const discount = order.originalData?.discount || 0;
-    const total = subtotal + shipping - discount;
+        const subtotal = order.items.reduce((sum, item) => sum + (Number(item.price || 0) * Number(item.amount || 0)), 0);
+        const shipping = Number(order.originalData?.shipFee || 0);
+        const otherFee = Number(order.originalData?.otherFee || 0);
+        const discount = Number(order.originalData?.discount || 0);
+        const total = subtotal + shipping + otherFee - discount;
 
-    // QR Code URL Generation
-    // Format: https://img.vietqr.io/image/<BANK>-<ACCOUNT>-<TEMPLATE>.jpg?amount=<AMOUNT>&addInfo=<INFO>
-    // Info: <Customer Name> <Order ID> thanh toan
-    const bankId = 'VCB';
-    const accountNo = '1029443065';
-    const template = 'compact';
-    const addInfo = encodeURIComponent(`${order.customer.name} ${order.id} thanh toan`);
-    const qrUrl = `https://img.vietqr.io/image/${bankId}-${accountNo}-${template}.jpg?amount=${total}&addInfo=${addInfo}`;
+        // QR Code URL Generation
+        const bankId = 'VCB';
+        const accountNo = '1029443065';
+        const template = 'compact';
+        const addInfo = encodeURIComponent(`${order.customer.name} ${order.id} thanh toan`);
+        const qrUrl = `https://img.vietqr.io/image/${bankId}-${accountNo}-${template}.jpg?amount=${total}&addInfo=${addInfo}`;
+
+        return { total, subtotal, shipping, otherFee, discount, qrUrl, bankId, accountNo };
+    }, [order]);
+
+    React.useEffect(() => {
+        const generateQrBase64 = async () => {
+            if (!qrUrl) return;
+            try {
+                const response = await fetch(qrUrl);
+                const blob = await response.blob();
+                const reader = new FileReader();
+                reader.onloadend = () => {
+                    setQrBase64(reader.result);
+                };
+                reader.readAsDataURL(blob);
+            } catch (error) {
+                console.error("Error generating QR Base64:", error);
+                setQrBase64(qrUrl);
+            }
+        };
+        generateQrBase64();
+    }, [qrUrl]);
 
     const handlePrint = () => {
         window.print();
@@ -65,7 +93,7 @@ const InvoiceModal = ({ isOpen, onClose, order }) => {
     const handleZoomOut = () => setZoom(prev => Math.max(prev - 0.1, 0.4));
     const handleFitWindow = () => calculateZoom();
 
-    const { showToast } = useToast();
+    if (!isOpen || !order) return null;
 
     const handleShare = async () => {
         if (!printRef.current || isSharing) return;
@@ -74,9 +102,9 @@ const InvoiceModal = ({ isOpen, onClose, order }) => {
         try {
             // Capture the invoice content using html-to-image
             const dataUrl = await toPng(printRef.current, {
-                cacheBust: true,
+                cacheBust: false,
                 backgroundColor: '#ffffff',
-                pixelRatio: 3, // FHD quality (approx 1680x2380px for A5)
+                pixelRatio: 5, // FHD quality (approx 1680x2380px for A5)
                 style: {
                     transform: 'none', // Reset transform for capture
                     boxShadow: 'none'
@@ -286,7 +314,7 @@ const InvoiceModal = ({ isOpen, onClose, order }) => {
                             {/* QR Code */}
                             <div className="w-full md:w-1/2 print:w-1/2 flex flex-col items-center justify-center p-4 bg-white border-2 border-dashed border-gray-200 rounded-xl print:border-gray-300">
                                 <img
-                                    src={qrUrl}
+                                    src={qrBase64 || qrUrl}
                                     alt="Payment QR Code"
                                     className="w-32 h-32 object-contain mb-2"
                                     crossOrigin="anonymous"
@@ -309,6 +337,14 @@ const InvoiceModal = ({ isOpen, onClose, order }) => {
                                         {new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(shipping)}
                                     </span>
                                 </div>
+                                {otherFee > 0 && (
+                                    <div className="flex justify-between text-xs">
+                                        <span className="text-gray-500">Phí khác:</span>
+                                        <span className="font-medium text-gray-900">
+                                            {new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(otherFee)}
+                                        </span>
+                                    </div>
+                                )}
                                 {discount > 0 && (
                                     <div className="flex justify-between text-xs">
                                         <span className="text-gray-500">Giảm giá:</span>
