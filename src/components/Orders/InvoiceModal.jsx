@@ -73,19 +73,39 @@ const InvoiceModal = ({ isOpen, onClose, order }) => {
     }, [order]);
 
     React.useEffect(() => {
-        const generateQrBase64 = async () => {
+        const generateQrBase64 = async (retries = 3) => {
             if (!qrUrl) return;
-            try {
-                const response = await fetch(qrUrl);
-                const blob = await response.blob();
-                const reader = new FileReader();
-                reader.onloadend = () => {
-                    setQrBase64(reader.result);
-                };
-                reader.readAsDataURL(blob);
-            } catch (error) {
-                console.error("Error generating QR Base64:", error);
-                setQrBase64(qrUrl);
+            
+            for (let i = 0; i < retries; i++) {
+                try {
+                    // Add cache busting
+                    const urlWithCacheBust = `${qrUrl}&t=${Date.now()}`;
+                    const response = await fetch(urlWithCacheBust);
+                    
+                    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+                    
+                    const blob = await response.blob();
+                    const reader = new FileReader();
+                    
+                    await new Promise((resolve, reject) => {
+                        reader.onloadend = () => {
+                            setQrBase64(reader.result);
+                            resolve();
+                        };
+                        reader.onerror = reject;
+                        reader.readAsDataURL(blob);
+                    });
+                    
+                    return; // Success, exit loop
+                } catch (error) {
+                    console.error(`Attempt ${i + 1} failed to generate QR Base64:`, error);
+                    if (i === retries - 1) {
+                        setQrBase64(qrUrl); // Fallback to original URL on final failure
+                    } else {
+                        // Wait before retrying
+                        await new Promise(resolve => setTimeout(resolve, 1000 * (i + 1)));
+                    }
+                }
             }
         };
         generateQrBase64();
@@ -395,15 +415,17 @@ const InvoiceModal = ({ isOpen, onClose, order }) => {
                             <div className="flex flex-col md:flex-row gap-8">
                                 {/* QR Code */}
                                 <div className="w-full md:w-1/2 flex flex-col items-center justify-center p-4 bg-white border-2 border-dashed border-gray-200 rounded-xl">
-                                    <img
-                                        ref={qrRef}
-                                        src={qrBase64 || qrUrl}
-                                        alt="Payment QR Code"
-                                        className="w-32 h-32 object-contain mb-2"
-                                        crossOrigin="anonymous"
-                                        onLoad={handleQrLoad}
-                                        onError={handleQrLoad} // Continue even if QR fails
-                                    />
+                                    {qrBase64 && (
+                                        <img
+                                            ref={qrRef}
+                                            src={qrBase64}
+                                            alt="Payment QR Code"
+                                            className="w-32 h-32 object-contain mb-2"
+                                            crossOrigin="anonymous"
+                                            onLoad={handleQrLoad}
+                                            onError={handleQrLoad} // Continue even if QR fails
+                                        />
+                                    )}
                                     <p className="text-[10px] text-gray-500 text-center">Quét mã để thanh toán</p>
                                     <p className="text-[10px] font-mono text-gray-400 mt-1">{bankId} - {accountNo}</p>
                                 </div>
