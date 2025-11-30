@@ -95,11 +95,23 @@ const InvoiceModal = ({ isOpen, onClose, order }) => {
 
     if (!isOpen || !order) return null;
 
+    const qrRef = useRef();
+
     const handleShare = async () => {
         if (!printRef.current || isSharing) return;
 
         setIsSharing(true);
         try {
+            // Ensure QR code is loaded
+            if (qrRef.current) {
+                if (!qrRef.current.complete) {
+                    await new Promise((resolve) => {
+                        qrRef.current.onload = resolve;
+                        qrRef.current.onerror = resolve; // Proceed even if error, to avoid hanging
+                    });
+                }
+            }
+
             // Capture the invoice content using html-to-image
             const dataUrl = await toPng(printRef.current, {
                 cacheBust: false,
@@ -340,6 +352,7 @@ const InvoiceModal = ({ isOpen, onClose, order }) => {
                             {/* QR Code */}
                             <div className="w-full md:w-1/2 print:w-1/2 flex flex-col items-center justify-center p-4 bg-white border-2 border-dashed border-gray-200 rounded-xl print:border-gray-300">
                                 <img
+                                    ref={qrRef}
                                     src={qrBase64 || qrUrl}
                                     alt="Payment QR Code"
                                     className="w-32 h-32 object-contain mb-2"
