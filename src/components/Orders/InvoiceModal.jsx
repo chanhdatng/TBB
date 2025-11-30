@@ -12,6 +12,8 @@ const InvoiceModal = ({ isOpen, onClose, order }) => {
     const [qrBase64, setQrBase64] = useState(null);
     const [invoiceImage, setInvoiceImage] = useState(null);
     const [isGenerating, setIsGenerating] = useState(false);
+    const [qrLoaded, setQrLoaded] = useState(false);
+    const [qrLoadError, setQrLoadError] = useState(false);
 
     const { showToast } = useToast();
 
@@ -44,6 +46,9 @@ const InvoiceModal = ({ isOpen, onClose, order }) => {
             calculateZoom();
             window.addEventListener('resize', calculateZoom);
             setInvoiceImage(null); // Reset image on open
+            setQrBase64(null); // Reset QR on open
+            setQrLoaded(false); // Reset QR loaded state
+            setQrLoadError(false); // Reset QR error state
             setIsGenerating(true); // Start generating
             return () => window.removeEventListener('resize', calculateZoom);
         }
@@ -73,26 +78,52 @@ const InvoiceModal = ({ isOpen, onClose, order }) => {
     }, [order]);
 
     React.useEffect(() => {
-        const generateQrBase64 = async (retries = 3) => {
-            if (!qrUrl) return;
+        const generateQrBase64 = async (retries = 5) => {
+            if (!qrUrl || !isOpen) return;
+            
+            setQrLoaded(false);
+            setQrLoadError(false);
             
             for (let i = 0; i < retries; i++) {
                 try {
-                    // Add cache busting
-                    const urlWithCacheBust = `${qrUrl}&t=${Date.now()}`;
-                    const response = await fetch(urlWithCacheBust);
+                    // Add cache busting with random number
+                    const urlWithCacheBust = `${qrUrl}&t=${Date.now()}&r=${Math.random()}`;
+                    
+                    // Use fetch with timeout for mobile
+                    const controller = new AbortController();
+                    const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout
+                    
+                    const response = await fetch(urlWithCacheBust, {
+                        signal: controller.signal,
+                        mode: 'cors',
+                        cache: 'no-cache'
+                    });
+                    
+                    clearTimeout(timeoutId);
                     
                     if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
                     
                     const blob = await response.blob();
+                    
+                    // Verify it's actually an image
+                    if (!blob.type.startsWith('image/')) {
+                        throw new Error('Response is not an image');
+                    }
+                    
                     const reader = new FileReader();
                     
                     await new Promise((resolve, reject) => {
                         reader.onloadend = () => {
-                            setQrBase64(reader.result);
-                            resolve();
+                            if (reader.result) {
+                                setQrBase64(reader.result);
+                                setQrLoaded(true);
+                                setQrLoadError(false);
+                                resolve();
+                            } else {
+                                reject(new Error('Failed to read QR code'));
+                            }
                         };
-                        reader.onerror = reject;
+                        reader.onerror = () => reject(new Error('FileReader error'));
                         reader.readAsDataURL(blob);
                     });
                     
@@ -100,24 +131,58 @@ const InvoiceModal = ({ isOpen, onClose, order }) => {
                 } catch (error) {
                     console.error(`Attempt ${i + 1} failed to generate QR Base64:`, error);
                     if (i === retries - 1) {
-                        setQrBase64(qrUrl); // Fallback to original URL on final failure
+                        // Final attempt - use original URL as fallback
+                        setQrBase64(qrUrl);
+                        setQrLoadError(true);
+                        setQrLoaded(true); // Still mark as loaded so invoice can generate
                     } else {
-                        // Wait before retrying
-                        await new Promise(resolve => setTimeout(resolve, 1000 * (i + 1)));
+                        // Wait before retrying with exponential backoff
+                        const delay = Math.min(1000 * Math.pow(2, i), 5000);
+                        await new Promise(resolve => setTimeout(resolve, delay));
                     }
                 }
             }
         };
-        generateQrBase64();
-    }, [qrUrl]);
+        
+        if (isOpen && qrUrl) {
+            generateQrBase64();
+        }
+    }, [qrUrl, isOpen]);
 
     // Generate Invoice Image when QR is ready
-    const generateInvoiceImage = async () => {
+    const generateInvoiceImage = React.useCallback(async () => {
         if (!printRef.current) return;
 
         try {
-            // Wait a bit for layout to stabilize
-            await new Promise(resolve => setTimeout(resolve, 500));
+            // Wait for QR to be loaded (with timeout)
+            let attempts = 0;
+            const maxAttempts = 20; // 10 seconds max wait
+            while (!qrLoaded && attempts < maxAttempts) {
+                await new Promise(resolve => setTimeout(resolve, 500));
+                attempts++;
+            }
+
+            // Wait a bit more for layout to stabilize and QR image to render
+            await new Promise(resolve => setTimeout(resolve, 300));
+
+            // Double check QR image is actually loaded in DOM
+            if (qrRef.current && !qrRef.current.complete) {
+                await new Promise((resolve) => {
+                    let checkAttempts = 0;
+                    const maxCheckAttempts = 30; // 3 seconds max
+                    const checkComplete = () => {
+                        if (qrRef.current && qrRef.current.complete) {
+                            resolve();
+                        } else if (checkAttempts < maxCheckAttempts) {
+                            checkAttempts++;
+                            setTimeout(checkComplete, 100);
+                        } else {
+                            resolve(); // Continue even if not complete
+                        }
+                    };
+                    checkComplete();
+                });
+            }
 
             const dataUrl = await toPng(printRef.current, {
                 cacheBust: false,
@@ -135,12 +200,26 @@ const InvoiceModal = ({ isOpen, onClose, order }) => {
             setIsGenerating(false);
             showToast("Không thể tạo ảnh hóa đơn", "error");
         }
-    };
+    }, [qrLoaded, showToast]);
 
     // Trigger generation when QR image loads
-    const handleQrLoad = () => {
-        generateInvoiceImage();
-    };
+    const handleQrLoad = React.useCallback(() => {
+        // Generate invoice after a short delay to ensure image is rendered
+        setTimeout(() => {
+            generateInvoiceImage();
+        }, 300);
+    }, [generateInvoiceImage]);
+
+    // Also trigger generation when QR state changes to loaded
+    React.useEffect(() => {
+        if (qrLoaded && qrBase64 && isGenerating && !invoiceImage) {
+            // Small delay to ensure DOM is updated
+            const timer = setTimeout(() => {
+                generateInvoiceImage();
+            }, 500);
+            return () => clearTimeout(timer);
+        }
+    }, [qrLoaded, qrBase64, isGenerating, invoiceImage, generateInvoiceImage]);
 
     const handlePrint = () => {
         if (invoiceImage) {
@@ -415,16 +494,32 @@ const InvoiceModal = ({ isOpen, onClose, order }) => {
                             <div className="flex flex-col md:flex-row gap-8">
                                 {/* QR Code */}
                                 <div className="w-full md:w-1/2 flex flex-col items-center justify-center p-4 bg-white border-2 border-dashed border-gray-200 rounded-xl">
-                                    {qrBase64 && (
+                                    {qrBase64 ? (
                                         <img
                                             ref={qrRef}
                                             src={qrBase64}
                                             alt="Payment QR Code"
                                             className="w-32 h-32 object-contain mb-2"
                                             crossOrigin="anonymous"
-                                            onLoad={handleQrLoad}
-                                            onError={handleQrLoad} // Continue even if QR fails
+                                            onLoad={(e) => {
+                                                // Ensure image is actually loaded
+                                                if (e.target.complete && e.target.naturalWidth > 0) {
+                                                    handleQrLoad();
+                                                }
+                                            }}
+                                            onError={(e) => {
+                                                console.error('QR image failed to load');
+                                                // Still try to generate invoice without QR
+                                                setTimeout(() => {
+                                                    handleQrLoad();
+                                                }, 500);
+                                            }}
+                                            loading="eager"
                                         />
+                                    ) : (
+                                        <div className="w-32 h-32 flex items-center justify-center mb-2">
+                                            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-400"></div>
+                                        </div>
                                     )}
                                     <p className="text-[10px] text-gray-500 text-center">Quét mã để thanh toán</p>
                                     <p className="text-[10px] font-mono text-gray-400 mt-1">{bankId} - {accountNo}</p>
