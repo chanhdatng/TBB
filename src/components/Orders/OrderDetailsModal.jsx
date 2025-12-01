@@ -11,6 +11,7 @@ const OrderDetailsModal = ({ isOpen, onClose, order, onEdit, onDelete }) => {
     const [isSyncing, setIsSyncing] = useState(false);
     const [syncSuccess, setSyncSuccess] = useState(false);
     const [showInvoice, setShowInvoice] = useState(false);
+    const [isLoadingInvoice, setIsLoadingInvoice] = useState(false);
 
     if (!isOpen || !order) return null;
 
@@ -202,15 +203,26 @@ const OrderDetailsModal = ({ isOpen, onClose, order, onEdit, onDelete }) => {
                     {/* Payment Details */}
                     <div className="mt-6 pt-4 border-t border-gray-100 space-y-2">
                         <div className="flex justify-between text-sm">
-                            <span className="text-gray-500">Shipping Fee</span>
-                            <span className="font-medium text-gray-900">
-                                {new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(order.originalData?.shipFee || 0)}
+                            <span className="text-gray-500">
+                                Discount {(() => {
+                                    const d = Number(order.originalData?.discount || 0);
+                                    return d <= 100 && d > 0 ? `(${d}%)` : '';
+                                })()}
+                            </span>
+                            <span className="font-medium text-red-500">
+                                -{new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(
+                                    (() => {
+                                        const subtotal = order.items.reduce((sum, item) => sum + (Number(item.price || 0) * Number(item.amount || 0)), 0);
+                                        const discountValue = Number(order.originalData?.discount || 0);
+                                        return discountValue <= 100 ? (subtotal * discountValue) / 100 : discountValue;
+                                    })()
+                                )}
                             </span>
                         </div>
                         <div className="flex justify-between text-sm">
-                            <span className="text-gray-500">Discount</span>
-                            <span className="font-medium text-red-500">
-                                -{new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(order.originalData?.discount || 0)}
+                            <span className="text-gray-500">Shipping Fee</span>
+                            <span className="font-medium text-gray-900">
+                                {new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(order.originalData?.shipFee || 0)}
                             </span>
                         </div>
                     </div>
@@ -224,10 +236,23 @@ const OrderDetailsModal = ({ isOpen, onClose, order, onEdit, onDelete }) => {
                     </div>
                     <div className="flex gap-3">
                         <button
-                            onClick={() => setShowInvoice(true)}
-                            className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-blue-50 border border-blue-100 text-blue-600 font-medium hover:bg-blue-100 transition-colors"
+                            onClick={() => {
+                                setIsLoadingInvoice(true);
+                                setShowInvoice(true);
+                            }}
+                            disabled={isLoadingInvoice}
+                            className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-blue-50 border border-blue-100 text-blue-600 font-medium hover:bg-blue-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                         >
-                            <FileText size={18} /> Invoice
+                            {isLoadingInvoice ? (
+                                <>
+                                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
+                                    Loading...
+                                </>
+                            ) : (
+                                <>
+                                    <FileText size={18} /> Invoice
+                                </>
+                            )}
                         </button>
                         <button
                             onClick={onEdit}
@@ -247,8 +272,14 @@ const OrderDetailsModal = ({ isOpen, onClose, order, onEdit, onDelete }) => {
 
             <InvoiceModal
                 isOpen={showInvoice}
-                onClose={() => setShowInvoice(false)}
+                onClose={() => {
+                    setShowInvoice(false);
+                    setIsLoadingInvoice(false);
+                }}
                 order={order}
+                onReady={() => {
+                    setIsLoadingInvoice(false);
+                }}
             />
         </div>
     );

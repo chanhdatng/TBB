@@ -21,7 +21,8 @@ const ConfirmPreOrderModal = ({ isOpen, onClose, onConfirm, onReject, order }) =
 
     if (!isOpen || !order) return null;
 
-    const total = subtotal + shipFee - discount;
+    const discountAmount = discount <= 100 ? (subtotal * discount) / 100 : discount;
+    const total = subtotal + shipFee - discountAmount;
 
     const formatCurrency = (amount) => {
         return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(amount);
@@ -101,6 +102,22 @@ const ConfirmPreOrderModal = ({ isOpen, onClose, onConfirm, onReject, order }) =
                         </div>
 
                         <div className="flex justify-between items-center">
+                            <label className="text-gray-700 font-medium">Giảm giá (%)</label>
+                            <div className="relative w-32">
+                                <input
+                                    type="number"
+                                    value={discount}
+                                    onChange={(e) => setDiscount(Number(e.target.value))}
+                                    className="w-full px-3 py-1.5 text-right bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 font-medium text-red-600"
+                                />
+                                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-xs">%</span>
+                            </div>
+                            <div className="text-sm text-red-500 font-medium min-w-[80px] text-right">
+                                -{formatCurrency(discountAmount)}
+                            </div>
+                        </div>
+
+                        <div className="flex justify-between items-center">
                             <label className="text-gray-700 font-medium">Phí ship</label>
                             <div className="relative w-32">
                                 <input
@@ -108,19 +125,6 @@ const ConfirmPreOrderModal = ({ isOpen, onClose, onConfirm, onReject, order }) =
                                     value={shipFee}
                                     onChange={(e) => setShipFee(Number(e.target.value))}
                                     className="w-full px-3 py-1.5 text-right bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 font-medium"
-                                />
-                                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-xs">₫</span>
-                            </div>
-                        </div>
-
-                        <div className="flex justify-between items-center">
-                            <label className="text-gray-700 font-medium">Giảm giá</label>
-                            <div className="relative w-32">
-                                <input
-                                    type="number"
-                                    value={discount}
-                                    onChange={(e) => setDiscount(Number(e.target.value))}
-                                    className="w-full px-3 py-1.5 text-right bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 font-medium text-red-600"
                                 />
                                 <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-xs">₫</span>
                             </div>

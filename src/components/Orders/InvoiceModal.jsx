@@ -1,14 +1,14 @@
 import React, { useRef, useState } from 'react';
-import { X, Printer, Download, Share2, ZoomIn, ZoomOut, Maximize, Copy } from 'lucide-react';
+import { X, Printer, Download, Share2, Copy } from 'lucide-react';
 import { toPng } from 'html-to-image';
 import { useToast } from '../../contexts/ToastContext';
 
-const InvoiceModal = ({ isOpen, onClose, order }) => {
+const InvoiceModal = ({ isOpen, onClose, order, onReady }) => {
     const printRef = useRef();
     const qrRef = useRef();
+    const timeoutRef = useRef(null);
 
     const [isSharing, setIsSharing] = useState(false);
-    const [zoom, setZoom] = useState(0.8);
     const [qrBase64, setQrBase64] = useState(null);
     const [invoiceImage, setInvoiceImage] = useState(null);
     const [isGenerating, setIsGenerating] = useState(false);
@@ -17,54 +17,42 @@ const InvoiceModal = ({ isOpen, onClose, order }) => {
 
     const { showToast } = useToast();
 
-    const calculateZoom = () => {
-        const invoiceHeightPx = 794; // Approx A5 height in pixels (at 96 DPI)
-        const invoiceWidthPx = 560; // Approx A5 width in pixels
-        
-        const modalHeight = window.innerHeight * 0.9; // 90vh
-        const modalWidth = Math.min(window.innerWidth - 32, 600); // Max width 600px, minus outer padding
-        
-        const headerHeight = 65; // Header height
-        const padding = 40; // Content padding (p-4 = 16px * 2) + extra buffer
-        
-        const availableHeight = modalHeight - headerHeight - padding;
-        const availableWidth = modalWidth - padding;
-        
-        const scaleHeight = availableHeight / invoiceHeightPx;
-        const scaleWidth = availableWidth / invoiceWidthPx;
-        
-        // Use the smaller scale to ensure it fits both dimensions
-        const optimalZoom = Math.min(scaleHeight, scaleWidth);
-        
-        // Clamp zoom between 0.3 and 1.0 (no need to zoom in > 100% by default)
-        setZoom(Math.min(Math.max(optimalZoom, 0.3), 1.0));
-    };
+    // Default fallback QR code - use a default vietqr.io QR code
+    const defaultQrCode = React.useMemo(() => {
+        if (!order) return '';
+        const bankId = 'VCB';
+        const accountNo = '1029443065';
+        const template = 'compact';
+        // Use default amount and info for fallback
+        return `https://img.vietqr.io/image/${bankId}-${accountNo}-${template}.jpg?amount=0&addInfo=The%20Butter%20Bake`;
+    }, [order]);
 
-    // Auto-fit zoom on open
+    // Reset states on open
     React.useEffect(() => {
         if (isOpen) {
-            calculateZoom();
-            window.addEventListener('resize', calculateZoom);
             setInvoiceImage(null); // Reset image on open
             setQrBase64(null); // Reset QR on open
             setQrLoaded(false); // Reset QR loaded state
             setQrLoadError(false); // Reset QR error state
             setIsGenerating(true); // Start generating
-            return () => window.removeEventListener('resize', calculateZoom);
         }
     }, [isOpen]);
 
     // Calculate totals and QR URL safely using useMemo
-    const { total, subtotal, shipping, otherFee, discount, qrUrl, bankId, accountNo } = React.useMemo(() => {
+    const { total, subtotal, shipping, otherFee, discount, discountValue, qrUrl, bankId, accountNo } = React.useMemo(() => {
         if (!order) return { 
-            total: 0, subtotal: 0, shipping: 0, otherFee: 0, discount: 0, 
+            total: 0, subtotal: 0, shipping: 0, otherFee: 0, discount: 0, discountValue: 0,
             qrUrl: '', bankId: '', accountNo: '' 
         };
 
         const subtotal = order.items.reduce((sum, item) => sum + (Number(item.price || 0) * Number(item.amount || 0)), 0);
         const shipping = Number(order.originalData?.shipFee || 0);
         const otherFee = Number(order.originalData?.otherFee || 0);
-        const discount = Number(order.originalData?.discount || 0);
+        const discountValue = Number(order.originalData?.discount || 0);
+        // Heuristic: if discount <= 100, treat as percentage. Else treat as amount.
+        const discount = discountValue <= 100 
+            ? (subtotal * discountValue) / 100 
+            : discountValue;
         const total = subtotal + shipping + otherFee - discount;
 
         // QR Code URL Generation
@@ -74,7 +62,7 @@ const InvoiceModal = ({ isOpen, onClose, order }) => {
         const addInfo = encodeURIComponent(`${order.customer.name} ${order.id} thanh toan`);
         const qrUrl = `https://img.vietqr.io/image/${bankId}-${accountNo}-${template}.jpg?amount=${total}&addInfo=${addInfo}`;
 
-        return { total, subtotal, shipping, otherFee, discount, qrUrl, bankId, accountNo };
+        return { total, subtotal, shipping, otherFee, discount, discountValue, qrUrl, bankId, accountNo };
     }, [order]);
 
     React.useEffect(() => {
@@ -84,70 +72,94 @@ const InvoiceModal = ({ isOpen, onClose, order }) => {
             setQrLoaded(false);
             setQrLoadError(false);
             
-            for (let i = 0; i < retries; i++) {
-                try {
-                    // Add cache busting with random number
-                    const urlWithCacheBust = `${qrUrl}&t=${Date.now()}&r=${Math.random()}`;
-                    
-                    // Use fetch with timeout for mobile
-                    const controller = new AbortController();
-                    const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout
-                    
-                    const response = await fetch(urlWithCacheBust, {
-                        signal: controller.signal,
-                        mode: 'cors',
-                        cache: 'no-cache'
-                    });
-                    
-                    clearTimeout(timeoutId);
-                    
-                    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-                    
-                    const blob = await response.blob();
-                    
-                    // Verify it's actually an image
-                    if (!blob.type.startsWith('image/')) {
-                        throw new Error('Response is not an image');
-                    }
-                    
-                    const reader = new FileReader();
-                    
-                    await new Promise((resolve, reject) => {
-                        reader.onloadend = () => {
-                            if (reader.result) {
-                                setQrBase64(reader.result);
-                                setQrLoaded(true);
-                                setQrLoadError(false);
-                                resolve();
-                            } else {
-                                reject(new Error('Failed to read QR code'));
-                            }
-                        };
-                        reader.onerror = () => reject(new Error('FileReader error'));
-                        reader.readAsDataURL(blob);
-                    });
-                    
-                    return; // Success, exit loop
-                } catch (error) {
-                    console.error(`Attempt ${i + 1} failed to generate QR Base64:`, error);
-                    if (i === retries - 1) {
-                        // Final attempt - use original URL as fallback
-                        setQrBase64(qrUrl);
-                        setQrLoadError(true);
-                        setQrLoaded(true); // Still mark as loaded so invoice can generate
-                    } else {
-                        // Wait before retrying with exponential backoff
-                        const delay = Math.min(1000 * Math.pow(2, i), 5000);
-                        await new Promise(resolve => setTimeout(resolve, delay));
+            // Set overall timeout of 10 seconds
+            const overallTimeout = setTimeout(() => {
+                console.warn('QR code load timeout after 10s, using fallback QR');
+                setQrBase64(defaultQrCode);
+                setQrLoaded(true);
+                setQrLoadError(true);
+            }, 10000);
+            
+            try {
+                for (let i = 0; i < retries; i++) {
+                    try {
+                        // Add cache busting with random number
+                        const urlWithCacheBust = `${qrUrl}&t=${Date.now()}&r=${Math.random()}`;
+                        
+                        // Use fetch with timeout for mobile
+                        const controller = new AbortController();
+                        const timeoutId = setTimeout(() => controller.abort(), 8000); // 8s timeout per request
+                        
+                        const response = await fetch(urlWithCacheBust, {
+                            signal: controller.signal,
+                            mode: 'cors',
+                            cache: 'no-cache'
+                        });
+                        
+                        clearTimeout(timeoutId);
+                        
+                        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+                        
+                        const blob = await response.blob();
+                        
+                        // Verify it's actually an image
+                        if (!blob.type.startsWith('image/')) {
+                            throw new Error('Response is not an image');
+                        }
+                        
+                        const reader = new FileReader();
+                        
+                        await new Promise((resolve, reject) => {
+                            reader.onloadend = () => {
+                                if (reader.result) {
+                                    clearTimeout(overallTimeout);
+                                    setQrBase64(reader.result);
+                                    setQrLoaded(true);
+                                    setQrLoadError(false);
+                                    resolve();
+                                } else {
+                                    reject(new Error('Failed to read QR code'));
+                                }
+                            };
+                            reader.onerror = () => reject(new Error('FileReader error'));
+                            reader.readAsDataURL(blob);
+                        });
+                        
+                        return; // Success, exit loop
+                    } catch (error) {
+                        console.error(`Attempt ${i + 1} failed to generate QR Base64:`, error);
+                        if (i === retries - 1) {
+                            // Final attempt failed - use fallback QR
+                            clearTimeout(overallTimeout);
+                            setQrBase64(defaultQrCode);
+                            setQrLoadError(true);
+                            setQrLoaded(true); // Still mark as loaded so invoice can generate
+                        } else {
+                            // Wait before retrying with exponential backoff
+                            const delay = Math.min(1000 * Math.pow(2, i), 3000);
+                            await new Promise(resolve => setTimeout(resolve, delay));
+                        }
                     }
                 }
+            } catch (error) {
+                clearTimeout(overallTimeout);
+                console.error('QR code generation failed completely, using fallback:', error);
+                setQrBase64(defaultQrCode);
+                setQrLoadError(true);
+                setQrLoaded(true);
             }
         };
         
         if (isOpen && qrUrl) {
             generateQrBase64();
         }
-    }, [qrUrl, isOpen]);
+        
+        return () => {
+            if (timeoutRef.current) {
+                clearTimeout(timeoutRef.current);
+            }
+        };
+    }, [qrUrl, isOpen, defaultQrCode]);
 
     // Generate Invoice Image when QR is ready
     const generateInvoiceImage = React.useCallback(async () => {
@@ -195,12 +207,20 @@ const InvoiceModal = ({ isOpen, onClose, order }) => {
             });
             setInvoiceImage(dataUrl);
             setIsGenerating(false);
+            // Notify parent that invoice is ready
+            if (onReady) {
+                onReady();
+            }
         } catch (error) {
             console.error("Error generating invoice image:", error);
             setIsGenerating(false);
             showToast("Không thể tạo ảnh hóa đơn", "error");
+            // Still notify parent even on error
+            if (onReady) {
+                onReady();
+            }
         }
-    }, [qrLoaded, showToast]);
+    }, [qrLoaded, showToast, onReady]);
 
     // Trigger generation when QR image loads
     const handleQrLoad = React.useCallback(() => {
@@ -220,6 +240,17 @@ const InvoiceModal = ({ isOpen, onClose, order }) => {
             return () => clearTimeout(timer);
         }
     }, [qrLoaded, qrBase64, isGenerating, invoiceImage, generateInvoiceImage]);
+
+    // Call onReady when invoiceImage is ready
+    React.useEffect(() => {
+        if (invoiceImage && onReady && isOpen) {
+            // Small delay to ensure image is fully rendered
+            const timer = setTimeout(() => {
+                onReady();
+            }, 100);
+            return () => clearTimeout(timer);
+        }
+    }, [invoiceImage, onReady, isOpen]);
 
     const handlePrint = () => {
         if (invoiceImage) {
@@ -248,9 +279,6 @@ const InvoiceModal = ({ isOpen, onClose, order }) => {
         }
     };
 
-    const handleZoomIn = () => setZoom(prev => Math.min(prev + 0.1, 1.5));
-    const handleZoomOut = () => setZoom(prev => Math.max(prev - 0.1, 0.4));
-    const handleFitWindow = () => calculateZoom();
 
 
 
@@ -331,20 +359,13 @@ const InvoiceModal = ({ isOpen, onClose, order }) => {
     return (
         <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm print:p-0 print:bg-white">
             <div
-                className="bg-white rounded-xl shadow-2xl w-full max-w-[600px] overflow-hidden flex flex-col h-[90vh] print:shadow-none print:max-w-none print:max-h-none print:w-full print:h-full print:rounded-none"
+                className={`bg-white rounded-xl shadow-2xl w-full max-w-[600px] overflow-hidden flex flex-col ${invoiceImage ? 'max-h-[95vh]' : 'h-[90vh]'} md:h-[90vh] md:max-h-[90vh] print:shadow-none print:max-w-none print:max-h-none print:w-full print:h-full print:rounded-none`}
                 onClick={(e) => e.stopPropagation()}
             >
                 {/* Header Actions */}
-                <div className="flex justify-between items-center p-4 border-b border-gray-100 print:hidden bg-gray-50 z-10">
+                <div className="flex justify-between items-center p-4 border-b border-gray-100 print:hidden bg-gray-50 z-10 flex-shrink-0">
                     <div className="flex items-center gap-4">
                         <h3 className="font-bold text-gray-700">Invoice Preview</h3>
-                        {/* Zoom Controls */}
-                        <div className="flex items-center bg-white rounded-lg border border-gray-200 p-1">
-                            <button onClick={handleZoomOut} className="p-1.5 hover:bg-gray-100 rounded-md text-gray-600 transition-colors" title="Zoom Out"><ZoomOut size={16} /></button>
-                            <button onClick={handleZoomIn} className="p-1.5 hover:bg-gray-100 rounded-md text-gray-600 transition-colors" title="Zoom In"><ZoomIn size={16} /></button>
-                            <div className="w-px h-4 bg-gray-200 mx-1"></div>
-                            <button onClick={handleFitWindow} className="p-1.5 hover:bg-gray-100 rounded-md text-gray-600 transition-colors" title="Fit to Window"><Maximize size={16} /></button>
-                        </div>
                     </div>
                     <div className="flex gap-2">
                         <button
@@ -373,7 +394,7 @@ const InvoiceModal = ({ isOpen, onClose, order }) => {
                 </div>
 
                 {/* Content Area */}
-                <div className="flex-1 overflow-auto bg-gray-100 p-4 flex justify-center items-start relative">
+                <div className={`${invoiceImage ? 'md:flex-1' : 'flex-1'} overflow-auto bg-gray-100 p-2 md:p-4 flex justify-center items-center relative min-h-0 max-h-full`}>
                     {/* Loading State */}
                     {isGenerating && (
                         <div className="absolute inset-0 flex flex-col items-center justify-center bg-white/80 z-20">
@@ -384,11 +405,18 @@ const InvoiceModal = ({ isOpen, onClose, order }) => {
 
                     {/* Generated Image Display */}
                     {invoiceImage && (
-                        <div 
-                            className="bg-white shadow-xl transition-transform origin-top duration-200"
-                            style={{ transform: `scale(${zoom})` }}
-                        >
-                            <img src={invoiceImage} alt="Invoice" className="max-w-none" style={{ width: '148mm', height: 'auto' }} />
+                        <div className="bg-white shadow-xl w-full h-full flex items-center justify-center p-2 box-border overflow-hidden">
+                            <img 
+                                src={invoiceImage} 
+                                alt="Invoice" 
+                                className="object-contain" 
+                                style={{ 
+                                    width: 'auto', 
+                                    height: 'auto',
+                                    maxWidth: 'calc(100% - 16px)',
+                                    maxHeight: 'calc(100% - 16px)'
+                                }}
+                            />
                         </div>
                     )}
 
@@ -397,7 +425,7 @@ const InvoiceModal = ({ isOpen, onClose, order }) => {
                         <div
                             ref={printRef}
                             id="invoice-content"
-                            className="bg-white"
+                            className="bg-white flex flex-col"
                             style={{
                                 width: '148mm',
                                 minHeight: '210mm',
@@ -491,84 +519,115 @@ const InvoiceModal = ({ isOpen, onClose, order }) => {
                             </div>
 
                             {/* Footer Section: QR & Totals */}
-                            <div className="flex flex-col md:flex-row gap-8">
-                                {/* QR Code */}
-                                <div className="w-full md:w-1/2 flex flex-col items-center justify-center p-4 bg-white border-2 border-dashed border-gray-200 rounded-xl">
-                                    {qrBase64 ? (
-                                        <img
-                                            ref={qrRef}
-                                            src={qrBase64}
-                                            alt="Payment QR Code"
-                                            className="w-32 h-32 object-contain mb-2"
-                                            crossOrigin="anonymous"
-                                            onLoad={(e) => {
-                                                // Ensure image is actually loaded
-                                                if (e.target.complete && e.target.naturalWidth > 0) {
-                                                    handleQrLoad();
-                                                }
-                                            }}
-                                            onError={(e) => {
-                                                console.error('QR image failed to load');
-                                                // Still try to generate invoice without QR
-                                                setTimeout(() => {
-                                                    handleQrLoad();
-                                                }, 500);
-                                            }}
-                                            loading="eager"
-                                        />
-                                    ) : (
-                                        <div className="w-32 h-32 flex items-center justify-center mb-2">
-                                            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-400"></div>
-                                        </div>
-                                    )}
-                                    <p className="text-[10px] text-gray-500 text-center">Quét mã để thanh toán</p>
-                                    <p className="text-[10px] font-mono text-gray-400 mt-1">{bankId} - {accountNo}</p>
-                                </div>
-
-                                {/* Totals */}
-                                <div className="w-full md:w-1/2 space-y-2">
-                                    <div className="flex justify-between text-xs">
-                                        <span className="text-gray-500">Tạm tính:</span>
-                                        <span className="font-medium text-gray-900">
-                                            {new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(subtotal)}
-                                        </span>
-                                    </div>
-                                    <div className="flex justify-between text-xs">
-                                        <span className="text-gray-500">Phí vận chuyển:</span>
-                                        <span className="font-medium text-gray-900">
-                                            {new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(shipping)}
-                                        </span>
-                                    </div>
-                                    {otherFee > 0 && (
-                                        <div className="flex justify-between text-xs">
-                                            <span className="text-gray-500">Phí khác:</span>
-                                            <span className="font-medium text-gray-900">
-                                                {new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(otherFee)}
-                                            </span>
-                                        </div>
-                                    )}
-                                    {discount > 0 && (
-                                        <div className="flex justify-between text-xs">
-                                            <span className="text-gray-500">Giảm giá:</span>
-                                            <span className="font-medium text-red-500">
-                                                -{new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(discount)}
-                                            </span>
-                                        </div>
-                                    )}
-                                    <div className="pt-2 border-t border-gray-200 mt-1">
-                                        <div className="flex justify-between items-end">
-                                            <span className="text-sm font-bold text-gray-900">Tổng cộng:</span>
-                                            <span className="text-xl font-bold text-primary">
-                                                {new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(total)}
-                                            </span>
-                                        </div>
+                            <div className="flex-1 flex flex-col space-y-4">
+                                {/* QR Code & Main Totals Row - Always horizontal on mobile */}
+                                <div className="flex flex-row justify-between items-start gap-4">
+                                    {/* QR Code */}
+                                    <div className="flex-shrink-0 flex flex-col items-center justify-center p-3 bg-white border-2 border-dashed border-gray-200 rounded-xl">
+                                        {qrBase64 ? (
+                                            <img
+                                                ref={qrRef}
+                                                src={qrBase64}
+                                                alt="Payment QR Code"
+                                                className="w-24 h-24 md:w-32 md:h-32 object-contain mb-1"
+                                                crossOrigin="anonymous"
+                                                onLoad={(e) => {
+                                                    // Ensure image is actually loaded
+                                                    if (e.target.complete && e.target.naturalWidth > 0) {
+                                                        handleQrLoad();
+                                                    }
+                                                }}
+                                                onError={(e) => {
+                                                    console.error('QR image failed to load');
+                                                    // Still try to generate invoice without QR
+                                                    setTimeout(() => {
+                                                        handleQrLoad();
+                                                    }, 500);
+                                                }}
+                                                loading="eager"
+                                            />
+                                        ) : (
+                                            <div className="w-24 h-24 md:w-32 md:h-32 flex items-center justify-center mb-1">
+                                                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-400"></div>
+                                            </div>
+                                        )}
+                                        <p className="text-[9px] md:text-[10px] text-gray-500 text-center">Quét mã để thanh toán</p>
+                                        <p className="text-[9px] md:text-[10px] font-mono text-gray-400 mt-0.5">{bankId} - {accountNo}</p>
                                     </div>
 
-                                    <div className="mt-6 text-center pt-6 border-t border-gray-100">
-                                        <p className="text-sm font-medium text-gray-900">Cảm ơn quý khách!</p>
-                                        <p className="text-xs text-gray-500 mt-1">Hẹn gặp lại</p>
+                                    {/* Main Totals - Aligned with table columns using same table structure */}
+                                    <div className="flex-1">
+                                        <table className="w-full text-xs">
+                                            <tbody>
+                                                <tr>
+                                                    <td className="py-2 px-2"></td>
+                                                    <td className="py-2 px-2"></td>
+                                                    <td className="py-2 px-2 text-left text-gray-500">Tạm tính:</td>
+                                                    <td className="py-2 px-2"></td>
+                                                    <td className="py-2 px-2 text-right font-medium text-gray-900">
+                                                        {new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(subtotal)}
+                                                    </td>
+                                                </tr>
+                                                <tr>
+                                                    <td className="py-2 px-2"></td>
+                                                    <td className="py-2 px-2"></td>
+                                                    <td className="py-2 px-2 text-left text-gray-500">
+                                                        Giảm giá {discountValue <= 100 && discountValue > 0 ? `(${discountValue}%)` : ''}:
+                                                    </td>
+                                                    <td className="py-2 px-2"></td>
+                                                    <td className={`py-2 px-2 text-right font-medium ${discount > 0 ? 'text-green-600' : 'text-gray-900'}`}>
+                                                        -{new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(discount)}
+                                                    </td>
+                                                </tr>
+                                                <tr>
+                                                    <td className="py-2 px-2"></td>
+                                                    <td className="py-2 px-2"></td>
+                                                    <td className="py-2 px-2 text-left text-gray-500">Phí vận chuyển:</td>
+                                                    <td className="py-2 px-2"></td>
+                                                    <td className="py-2 px-2 text-right font-medium text-gray-900">
+                                                        {new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(shipping)}
+                                                    </td>
+                                                </tr>
+                                                <tr>
+                                                    <td className="py-2 px-2 pt-1"></td>
+                                                    <td className="py-2 px-2 pt-1"></td>
+                                                    <td className="py-2 px-2 pt-1 border-t border-gray-200 text-left">
+                                                        <span className="text-sm font-bold text-gray-900">Tổng cộng:</span>
+                                                    </td>
+                                                    <td className="py-2 px-2 pt-1 border-t border-gray-200"></td>
+                                                    <td className="py-2 px-2 pt-1 border-t border-gray-200 text-right">
+                                                        <span className="text-lg md:text-xl font-bold text-primary">
+                                                            {new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(total)}
+                                                        </span>
+                                                    </td>
+                                                </tr>
+                                            </tbody>
+                                        </table>
                                     </div>
                                 </div>
+
+                                {/* Additional Fees - Aligned with table columns */}
+                                {otherFee > 0 && (
+                                    <table className="w-full text-xs">
+                                        <tbody>
+                                            <tr>
+                                                <td className="py-2 px-2"></td>
+                                                <td className="py-2 px-2"></td>
+                                                <td className="py-2 px-2 text-left text-gray-500">Phí khác:</td>
+                                                <td className="py-2 px-2"></td>
+                                                <td className="py-2 px-2 text-right font-medium text-gray-900">
+                                                    {new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(otherFee)}
+                                                </td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                )}
+                            </div>
+
+                            {/* Thank you message - At the bottom of the page */}
+                            <div className="text-center pt-4 mt-auto">
+                                <p className="text-[10px] font-medium text-gray-700">Cảm ơn quý khách!</p>
+                                <p className="text-[9px] text-gray-500 mt-0.5">Hẹn gặp lại</p>
                             </div>
                         </div>
                     </div>

@@ -70,7 +70,13 @@ const CreateOrderModal = ({ isOpen, onClose, onCreateOrder, editingOrder, onUpda
                 setFees({
                     ship: editingOrder.originalData?.shipFee || 0,
 
-                    discount: editingOrder.originalData?.discount || 0,
+                    discount: (() => {
+                        const d = editingOrder.originalData?.discount || 0;
+                        if (d <= 100) return d;
+                        // Backward compatibility: calculate percentage from amount
+                        const subtotal = mappedItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+                        return subtotal > 0 ? (d / subtotal) * 100 : 0;
+                    })(),
                     other: editingOrder.originalData?.otherFee || 0,
                     note: editingOrder.originalData?.note || ''
                 });
@@ -166,7 +172,8 @@ const CreateOrderModal = ({ isOpen, onClose, onCreateOrder, editingOrder, onUpda
 
     const calculateTotal = () => {
         const itemsTotal = items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-        return itemsTotal + Number(fees.ship) - Number(fees.discount);
+        const discountAmount = (itemsTotal * fees.discount) / 100;
+        return itemsTotal + Number(fees.ship) - discountAmount;
     };
 
     const isDirty = () => {
@@ -331,6 +338,7 @@ const CreateOrderModal = ({ isOpen, onClose, onCreateOrder, editingOrder, onUpda
                 socialLink: customer.socialLink
             },
             customerPhone: customer.phone,
+
             discount: Number(fees.discount),
             orderDate: toCFAbsoluteTime(selectedDateTime), // Use selected date/time
             deliveryTimeSlot: deliveryTimeSlot, // Save the slot string
@@ -723,14 +731,23 @@ const CreateOrderModal = ({ isOpen, onClose, onCreateOrder, editingOrder, onUpda
                                         />
                                     </div>
                                     <div className="flex items-center justify-between">
-                                        <label className="text-sm text-gray-600">Discount</label>
-                                        <input
-                                            type="number"
-                                            min="0"
-                                            value={fees.discount}
-                                            onChange={(e) => setFees({ ...fees, discount: e.target.value })}
-                                            className="w-32 px-2 py-1 bg-white border border-gray-200 rounded text-right text-sm focus:outline-none focus:border-primary text-red-500"
-                                        />
+                                        <label className="text-sm text-gray-600">Discount (%)</label>
+                                        <div className="flex items-center gap-2">
+                                            <input
+                                                type="number"
+                                                min="0"
+                                                max="100"
+                                                value={fees.discount}
+                                                onChange={(e) => {
+                                                    const val = Math.min(100, Math.max(0, Number(e.target.value)));
+                                                    setFees({ ...fees, discount: val });
+                                                }}
+                                                className="w-16 px-2 py-1 bg-white border border-gray-200 rounded text-right text-sm focus:outline-none focus:border-primary text-red-500"
+                                            />
+                                            <span className="text-sm text-red-500 font-medium min-w-[80px] text-right">
+                                                -{new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format((items.reduce((sum, item) => sum + (item.price * item.quantity), 0) * fees.discount) / 100)}
+                                            </span>
+                                        </div>
                                     </div>
                                     <div className="border-t border-gray-200 pt-3 mt-3 flex items-center justify-between">
                                         <span className="font-bold text-gray-900">Total</span>

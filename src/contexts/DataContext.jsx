@@ -59,13 +59,14 @@ export const DataProvider = ({ children }) => {
                     })) : [];
 
                     // Calculate Price
-                    let total = 0;
-                    if (orderData.cakes) {
-                        total += orderData.cakes.reduce((sum, cake) => sum + (Number(cake.price || 0) * Number(cake.amount || 0)), 0);
-                    }
+                    const subtotal = orderData.cakes ? orderData.cakes.reduce((sum, cake) => sum + (Number(cake.price || 0) * Number(cake.amount || 0)), 0) : 0;
+                    let total = subtotal;
                     total += Number(orderData.shipFee || 0);
                     total += Number(orderData.otherFee || 0);
-                    total -= Number(orderData.discount || 0);
+                    
+                    const discountVal = Number(orderData.discount || 0);
+                    const discountAmount = discountVal <= 100 ? (subtotal * discountVal) / 100 : discountVal;
+                    total -= discountAmount;
 
                     // Map Status (Loose matching)
                     let status = 'Pending';
@@ -120,7 +121,8 @@ export const DataProvider = ({ children }) => {
                         const subtotal = items.reduce((sum, item) => sum + (Number(item.price || 0) * Number(item.amount || 0)), 0);
                         const shipFee = Number(orderData.shipFee || 0);
                         const otherFee = Number(orderData.otherFee || 0);
-                        const discount = Number(orderData.discount || 0);
+                        const discountVal = Number(orderData.discount || 0);
+                        const discount = discountVal <= 100 ? (subtotal * discountVal) / 100 : discountVal;
                         total = subtotal + shipFee + otherFee - discount;
                     }
 
