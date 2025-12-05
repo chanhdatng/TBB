@@ -1,7 +1,127 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { X, Phone, CheckCircle, ArrowRight, AlertTriangle, RefreshCw } from 'lucide-react';
 import { database } from '../../firebase';
 import { ref, update } from 'firebase/database';
+import { useVirtualizer } from '@tanstack/react-virtual';
+
+/**
+ * PERFORMANCE OPTIMIZATION: Virtualized Orders List
+ * Only renders visible items in viewport, dramatically reducing DOM nodes
+ */
+const OrdersList = ({ orders, selectedOrders, handleToggleOrder }) => {
+    const parentRef = useRef(null);
+
+    const virtualizer = useVirtualizer({
+        count: orders.length,
+        getScrollElement: () => parentRef.current,
+        estimateSize: () => 140, // Estimated height of each order card
+        overscan: 5 // Render 5 extra items above/below viewport
+    });
+
+    if (orders.length === 0) {
+        return (
+            <div className="p-6 overflow-y-auto max-h-96">
+                <div className="text-center py-8 text-gray-500">
+                    <Phone size={48} className="mx-auto text-gray-300 mb-3" />
+                    <p>No orders with phone format issues found</p>
+                </div>
+            </div>
+        );
+    }
+
+    return (
+        <div ref={parentRef} className="p-6 overflow-y-auto max-h-96">
+            <div
+                style={{
+                    height: `${virtualizer.getTotalSize()}px`,
+                    width: '100%',
+                    position: 'relative'
+                }}
+            >
+                {virtualizer.getVirtualItems().map((virtualItem) => {
+                    const order = orders[virtualItem.index];
+
+                    return (
+                        <div
+                            key={order.orderId}
+                            style={{
+                                position: 'absolute',
+                                top: 0,
+                                left: 0,
+                                width: '100%',
+                                transform: `translateY(${virtualItem.start}px)`,
+                                padding: '6px 0'
+                            }}
+                        >
+                            <div
+                                className={`
+                                    bg-gray-50 rounded-xl p-4 border transition-all cursor-pointer
+                                    ${selectedOrders[order.orderId]
+                                        ? 'border-primary bg-primary/5'
+                                        : 'border-gray-100 hover:border-gray-200'
+                                    }
+                                `}
+                                onClick={() => handleToggleOrder(order.orderId)}
+                            >
+                                <div className="flex items-start gap-4">
+                                    {/* Checkbox */}
+                                    <div className="mt-1">
+                                        <input
+                                            type="checkbox"
+                                            checked={selectedOrders[order.orderId] || false}
+                                            onChange={() => handleToggleOrder(order.orderId)}
+                                            className="w-5 h-5 text-primary rounded border-gray-300 focus:ring-2 focus:ring-primary/20"
+                                        />
+                                    </div>
+
+                                    {/* Order Info */}
+                                    <div className="flex-1 min-w-0">
+                                        <div className="flex items-center gap-2 mb-2 flex-wrap">
+                                            <span className="font-medium text-gray-900">{order.customerName}</span>
+                                            <span className="text-xs text-gray-500">
+                                                Order: {order.orderId.substring(0, 8)}...
+                                            </span>
+                                            <span className="px-2 py-0.5 bg-orange-100 text-orange-700 rounded text-xs font-medium">
+                                                {order.issueType}
+                                            </span>
+                                            <span className={`
+                                                px-2 py-0.5 rounded text-xs font-medium
+                                                ${order.status === 'Completed' ? 'bg-green-100 text-green-700' : ''}
+                                                ${order.status === 'Pending' ? 'bg-yellow-100 text-yellow-700' : ''}
+                                                ${order.status === 'Cancelled' ? 'bg-red-100 text-red-700' : ''}
+                                            `}>
+                                                {order.status}
+                                            </span>
+                                        </div>
+
+                                        {/* Phone Change */}
+                                        <div className="flex items-center gap-3 text-sm">
+                                            <div className="flex-1 min-w-0">
+                                                <p className="text-xs text-gray-500 mb-1">Current:</p>
+                                                <p className="text-red-600 font-mono">{order.currentPhone}</p>
+                                            </div>
+
+                                            <ArrowRight size={16} className="text-gray-400 flex-shrink-0" />
+
+                                            <div className="flex-1 min-w-0">
+                                                <p className="text-xs text-gray-500 mb-1">Will become:</p>
+                                                <p className="text-green-600 font-mono font-medium">{order.suggestedPhone}</p>
+                                            </div>
+                                        </div>
+
+                                        <p className="text-xs text-gray-500 mt-2">
+                                            Order date: {order.orderDate}
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    );
+                })}
+            </div>
+        </div>
+    );
+};
 
 const PhoneFormatModal = ({ isOpen, onClose, orders }) => {
     const [selectedOrders, setSelectedOrders] = useState({});
@@ -181,83 +301,12 @@ const PhoneFormatModal = ({ isOpen, onClose, orders }) => {
                     </div>
                 </div>
 
-                {/* Orders List */}
-                <div className="p-6 overflow-y-auto max-h-96">
-                    {orders.length === 0 ? (
-                        <div className="text-center py-8 text-gray-500">
-                            <Phone size={48} className="mx-auto text-gray-300 mb-3" />
-                            <p>No orders with phone format issues found</p>
-                        </div>
-                    ) : (
-                        <div className="space-y-3">
-                            {orders.map((order) => (
-                                <div
-                                    key={order.orderId}
-                                    className={`
-                                        bg-gray-50 rounded-xl p-4 border transition-all cursor-pointer
-                                        ${selectedOrders[order.orderId] 
-                                            ? 'border-primary bg-primary/5' 
-                                            : 'border-gray-100 hover:border-gray-200'
-                                        }
-                                    `}
-                                    onClick={() => handleToggleOrder(order.orderId)}
-                                >
-                                    <div className="flex items-start gap-4">
-                                        {/* Checkbox */}
-                                        <div className="mt-1">
-                                            <input
-                                                type="checkbox"
-                                                checked={selectedOrders[order.orderId] || false}
-                                                onChange={() => handleToggleOrder(order.orderId)}
-                                                className="w-5 h-5 text-primary rounded border-gray-300 focus:ring-2 focus:ring-primary/20"
-                                            />
-                                        </div>
-
-                                        {/* Order Info */}
-                                        <div className="flex-1 min-w-0">
-                                            <div className="flex items-center gap-2 mb-2 flex-wrap">
-                                                <span className="font-medium text-gray-900">{order.customerName}</span>
-                                                <span className="text-xs text-gray-500">
-                                                    Order: {order.orderId.substring(0, 8)}...
-                                                </span>
-                                                <span className="px-2 py-0.5 bg-orange-100 text-orange-700 rounded text-xs font-medium">
-                                                    {order.issueType}
-                                                </span>
-                                                <span className={`
-                                                    px-2 py-0.5 rounded text-xs font-medium
-                                                    ${order.status === 'Completed' ? 'bg-green-100 text-green-700' : ''}
-                                                    ${order.status === 'Pending' ? 'bg-yellow-100 text-yellow-700' : ''}
-                                                    ${order.status === 'Cancelled' ? 'bg-red-100 text-red-700' : ''}
-                                                `}>
-                                                    {order.status}
-                                                </span>
-                                            </div>
-
-                                            {/* Phone Change */}
-                                            <div className="flex items-center gap-3 text-sm">
-                                                <div className="flex-1 min-w-0">
-                                                    <p className="text-xs text-gray-500 mb-1">Current:</p>
-                                                    <p className="text-red-600 font-mono">{order.currentPhone}</p>
-                                                </div>
-                                                
-                                                <ArrowRight size={16} className="text-gray-400 flex-shrink-0" />
-                                                
-                                                <div className="flex-1 min-w-0">
-                                                    <p className="text-xs text-gray-500 mb-1">Will become:</p>
-                                                    <p className="text-green-600 font-mono font-medium">{order.suggestedPhone}</p>
-                                                </div>
-                                            </div>
-
-                                            <p className="text-xs text-gray-500 mt-2">
-                                                Order date: {order.orderDate}
-                                            </p>
-                                        </div>
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-                    )}
-                </div>
+                {/* Orders List with Virtualization */}
+                <OrdersList
+                    orders={orders}
+                    selectedOrders={selectedOrders}
+                    handleToggleOrder={handleToggleOrder}
+                />
 
                 {/* Footer */}
                 <div className="flex items-center justify-between gap-4 p-6 border-t border-gray-100 bg-gray-50">

@@ -1,13 +1,26 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { X, Calendar, CheckCircle, ArrowRight, AlertTriangle, RefreshCw } from 'lucide-react';
 import { database } from '../../firebase';
 import { ref, update } from 'firebase/database';
+import { useVirtualizer } from '@tanstack/react-virtual';
 
 const OrderIdsModal = ({ isOpen, onClose, customers }) => {
     const [selectedCustomers, setSelectedCustomers] = useState({});
     const [isFixing, setIsFixing] = useState(false);
     const [fixProgress, setFixProgress] = useState({ processed: 0, total: 0, failed: 0 });
     const [fixResult, setFixResult] = useState(null);
+
+    /**
+     * PERFORMANCE OPTIMIZATION: Virtualization for customer list
+     */
+    const parentRef = useRef(null);
+
+    const virtualizer = useVirtualizer({
+        count: customers.length,
+        getScrollElement: () => parentRef.current,
+        estimateSize: () => 180, // Taller cards due to first/last order ID display
+        overscan: 5
+    });
 
     if (!isOpen) return null;
 
@@ -176,108 +189,129 @@ const OrderIdsModal = ({ isOpen, onClose, customers }) => {
                     </div>
                 </div>
 
-                {/* Customers List */}
-                <div className="p-6 overflow-y-auto max-h-96">
+                {/* Customers List with Virtualization */}
+                <div ref={parentRef} className="p-6 overflow-y-auto max-h-96">
                     {customers.length === 0 ? (
                         <div className="text-center py-8 text-gray-500">
                             <Calendar size={48} className="mx-auto text-gray-300 mb-3" />
                             <p>All customers have correct order IDs</p>
                         </div>
                     ) : (
-                        <div className="space-y-3">
-                            {customers.map((customer) => (
-                                <div
-                                    key={customer.phone}
-                                    className={`
-                                        bg-gray-50 rounded-xl p-4 border transition-all cursor-pointer
-                                        ${selectedCustomers[customer.phone] 
-                                            ? 'border-primary bg-primary/5' 
-                                            : 'border-gray-100 hover:border-gray-200'
-                                        }
-                                    `}
-                                    onClick={() => handleToggleCustomer(customer.phone)}
-                                >
-                                    <div className="flex items-start gap-4">
-                                        {/* Checkbox */}
-                                        <div className="mt-1">
-                                            <input
-                                                type="checkbox"
-                                                checked={selectedCustomers[customer.phone] || false}
-                                                onChange={() => handleToggleCustomer(customer.phone)}
-                                                className="w-5 h-5 text-primary rounded border-gray-300 focus:ring-2 focus:ring-primary/20"
-                                            />
-                                        </div>
+                        <div
+                            style={{
+                                height: `${virtualizer.getTotalSize()}px`,
+                                width: '100%',
+                                position: 'relative'
+                            }}
+                        >
+                            {virtualizer.getVirtualItems().map((virtualItem) => {
+                                const customer = customers[virtualItem.index];
 
-                                        {/* Customer Info */}
-                                        <div className="flex-1 min-w-0">
-                                            <div className="flex items-center gap-2 mb-3 flex-wrap">
-                                                <span className="font-medium text-gray-900">{customer.name}</span>
-                                                <span className="text-xs text-gray-500">({customer.phone})</span>
-                                                <span className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded text-xs font-medium">
-                                                    {customer.totalOrders} orders
-                                                </span>
-                                                {customer.issues.map((issue, idx) => (
-                                                    <span key={idx} className="px-2 py-0.5 bg-indigo-100 text-indigo-700 rounded text-xs font-medium">
-                                                        {issue}
-                                                    </span>
-                                                ))}
-                                            </div>
-
-                                            {/* First Order ID */}
-                                            <div className="mb-3 pb-3 border-b border-gray-200">
-                                                <p className="text-xs font-semibold text-gray-700 mb-2">First Order ID:</p>
-                                                <div className="flex items-center gap-3 text-sm">
-                                                    <div className="flex-1 min-w-0">
-                                                        <p className="text-xs text-gray-500 mb-1">Current:</p>
-                                                        {customer.currentFirstOrderId ? (
-                                                            <p className="text-gray-600 font-mono text-xs truncate">{customer.currentFirstOrderId}</p>
-                                                        ) : (
-                                                            <p className="text-red-600 italic text-xs">Missing</p>
-                                                        )}
-                                                    </div>
-                                                    
-                                                    <ArrowRight size={16} className="text-gray-400 flex-shrink-0" />
-                                                    
-                                                    <div className="flex-1 min-w-0">
-                                                        <p className="text-xs text-gray-500 mb-1">Correct:</p>
-                                                        <p className="text-green-600 font-mono font-medium text-xs truncate">{customer.correctFirstOrderId}</p>
-                                                    </div>
-
-                                                    <div className="text-xs text-gray-500">
-                                                        {customer.firstOrderDate}
-                                                    </div>
+                                return (
+                                    <div
+                                        key={customer.phone}
+                                        style={{
+                                            position: 'absolute',
+                                            top: 0,
+                                            left: 0,
+                                            width: '100%',
+                                            transform: `translateY(${virtualItem.start}px)`,
+                                            padding: '6px 0'
+                                        }}
+                                    >
+                                        <div
+                                            className={`
+                                                bg-gray-50 rounded-xl p-4 border transition-all cursor-pointer
+                                                ${selectedCustomers[customer.phone]
+                                                    ? 'border-primary bg-primary/5'
+                                                    : 'border-gray-100 hover:border-gray-200'
+                                                }
+                                            `}
+                                            onClick={() => handleToggleCustomer(customer.phone)}
+                                        >
+                                            <div className="flex items-start gap-4">
+                                                {/* Checkbox */}
+                                                <div className="mt-1">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={selectedCustomers[customer.phone] || false}
+                                                        onChange={() => handleToggleCustomer(customer.phone)}
+                                                        className="w-5 h-5 text-primary rounded border-gray-300 focus:ring-2 focus:ring-primary/20"
+                                                    />
                                                 </div>
-                                            </div>
 
-                                            {/* Last Order ID */}
-                                            <div>
-                                                <p className="text-xs font-semibold text-gray-700 mb-2">Last Order ID:</p>
-                                                <div className="flex items-center gap-3 text-sm">
-                                                    <div className="flex-1 min-w-0">
-                                                        <p className="text-xs text-gray-500 mb-1">Current:</p>
-                                                        {customer.currentLastOrderId ? (
-                                                            <p className="text-gray-600 font-mono text-xs truncate">{customer.currentLastOrderId}</p>
-                                                        ) : (
-                                                            <p className="text-red-600 italic text-xs">Missing</p>
-                                                        )}
-                                                    </div>
-                                                    
-                                                    <ArrowRight size={16} className="text-gray-400 flex-shrink-0" />
-                                                    
-                                                    <div className="flex-1 min-w-0">
-                                                        <p className="text-xs text-gray-500 mb-1">Correct:</p>
-                                                        <p className="text-green-600 font-mono font-medium text-xs truncate">{customer.correctLastOrderId}</p>
+                                                {/* Customer Info */}
+                                                <div className="flex-1 min-w-0">
+                                                    <div className="flex items-center gap-2 mb-3 flex-wrap">
+                                                        <span className="font-medium text-gray-900">{customer.name}</span>
+                                                        <span className="text-xs text-gray-500">({customer.phone})</span>
+                                                        <span className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded text-xs font-medium">
+                                                            {customer.totalOrders} orders
+                                                        </span>
+                                                        {customer.issues.map((issue, idx) => (
+                                                            <span key={idx} className="px-2 py-0.5 bg-indigo-100 text-indigo-700 rounded text-xs font-medium">
+                                                                {issue}
+                                                            </span>
+                                                        ))}
                                                     </div>
 
-                                                    <div className="text-xs text-gray-500">
-                                                        {customer.lastOrderDate}
+                                                    {/* First Order ID */}
+                                                    <div className="mb-3 pb-3 border-b border-gray-200">
+                                                        <p className="text-xs font-semibold text-gray-700 mb-2">First Order ID:</p>
+                                                        <div className="flex items-center gap-3 text-sm">
+                                                            <div className="flex-1 min-w-0">
+                                                                <p className="text-xs text-gray-500 mb-1">Current:</p>
+                                                                {customer.currentFirstOrderId ? (
+                                                                    <p className="text-gray-600 font-mono text-xs truncate">{customer.currentFirstOrderId}</p>
+                                                                ) : (
+                                                                    <p className="text-red-600 italic text-xs">Missing</p>
+                                                                )}
+                                                            </div>
+
+                                                            <ArrowRight size={16} className="text-gray-400 flex-shrink-0" />
+
+                                                            <div className="flex-1 min-w-0">
+                                                                <p className="text-xs text-gray-500 mb-1">Correct:</p>
+                                                                <p className="text-green-600 font-mono font-medium text-xs truncate">{customer.correctFirstOrderId}</p>
+                                                            </div>
+
+                                                            <div className="text-xs text-gray-500">
+                                                                {customer.firstOrderDate}
+                                                            </div>
+                                                        </div>
+                                                    </div>
+
+                                                    {/* Last Order ID */}
+                                                    <div>
+                                                        <p className="text-xs font-semibold text-gray-700 mb-2">Last Order ID:</p>
+                                                        <div className="flex items-center gap-3 text-sm">
+                                                            <div className="flex-1 min-w-0">
+                                                                <p className="text-xs text-gray-500 mb-1">Current:</p>
+                                                                {customer.currentLastOrderId ? (
+                                                                    <p className="text-gray-600 font-mono text-xs truncate">{customer.currentLastOrderId}</p>
+                                                                ) : (
+                                                                    <p className="text-red-600 italic text-xs">Missing</p>
+                                                                )}
+                                                            </div>
+
+                                                            <ArrowRight size={16} className="text-gray-400 flex-shrink-0" />
+
+                                                            <div className="flex-1 min-w-0">
+                                                                <p className="text-xs text-gray-500 mb-1">Correct:</p>
+                                                                <p className="text-green-600 font-mono font-medium text-xs truncate">{customer.correctLastOrderId}</p>
+                                                            </div>
+
+                                                            <div className="text-xs text-gray-500">
+                                                                {customer.lastOrderDate}
+                                                            </div>
+                                                        </div>
                                                     </div>
                                                 </div>
                                             </div>
                                         </div>
                                     </div>
-                                </div>
-                            ))}
+                                );
+                            })}
                         </div>
                     )}
                 </div>
