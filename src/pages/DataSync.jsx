@@ -2,7 +2,7 @@ import React, { useMemo, useState, useEffect, useRef, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion';
 import { useData } from '../contexts/DataContext';
 import { database } from '../firebase';
-import { ref, onValue } from 'firebase/database';
+import { ref, get } from 'firebase/database';
 import {
     RefreshCw, Users, AlertCircle, CheckCircle, Database, Search,
     Filter, Phone, Calendar, Key, UserCheck, Trash2, Sparkles,
@@ -70,46 +70,51 @@ const DataSync = () => {
         phoneCache.current.clear();
     }, [customers, orders, firebaseCustomers]);
 
-    // Fetch customers directly from Firebase newCustomers
+    // Fetch customers directly from Firebase newCustomers (one-time fetch to avoid duplicate listeners)
     useEffect(() => {
-        const customersRef = ref(database, 'newCustomers');
+        const fetchCustomers = async () => {
+            try {
+                const customersRef = ref(database, 'newCustomers');
+                const snapshot = await get(customersRef);
+                const data = snapshot.val();
 
-        const unsubscribe = onValue(customersRef, (snapshot) => {
-            const data = snapshot.val();
-            if (data) {
-                const customersList = Object.keys(data)
-                    .map(key => {
-                        const item = data[key];
-                        // Basic validation: must be object and have at least name or phone
-                        if (!item || typeof item !== 'object') return null;
-                        if (!item.name && !item.phone) return null;
+                if (data) {
+                    const customersList = Object.keys(data)
+                        .map(key => {
+                            const item = data[key];
+                            // Basic validation: must be object and have at least name or phone
+                            if (!item || typeof item !== 'object') return null;
+                            if (!item.name && !item.phone) return null;
 
-                        // Explicitly strip internal id to avoid confusion
-                        const { id: _internalId, ...rest } = item;
+                            // Explicitly strip internal id to avoid confusion
+                            const { id: _internalId, ...rest } = item;
 
-                        return {
-                            ...rest, 
-                            id: key, // Ensure id is always the Firebase key
-                            name: item.name || 'Unknown',
-                            phone: item.phone || '',
-                            email: item.email || '',
-                            address: item.address || '',
-                            createdAt: item.createDate || null,
-                            firstOrderId: item.firstOrderId || null,
-                            lastOrderId: item.lastOrderId || null,
-                            // Keep all original data
-                            ...item
-                        };
-                    })
-                    .filter(item => item !== null); // Filter out invalid items
-                setFirebaseCustomers(customersList);
-                console.log('Fetched customers from Firebase:', customersList.length);
-            } else {
-                setFirebaseCustomers([]);
+                            return {
+                                ...rest,
+                                id: key, // Ensure id is always the Firebase key
+                                name: item.name || 'Unknown',
+                                phone: item.phone || '',
+                                email: item.email || '',
+                                address: item.address || '',
+                                createdAt: item.createDate || null,
+                                firstOrderId: item.firstOrderId || null,
+                                lastOrderId: item.lastOrderId || null,
+                                // Keep all original data
+                                ...item
+                            };
+                        })
+                        .filter(item => item !== null); // Filter out invalid items
+                    setFirebaseCustomers(customersList);
+                    console.log('✅ Fetched customers from Firebase (one-time):', customersList.length);
+                } else {
+                    setFirebaseCustomers([]);
+                }
+            } catch (error) {
+                console.error('❌ Error fetching customers:', error);
             }
-        });
+        };
 
-        return () => unsubscribe();
+        fetchCustomers();
     }, []);
 
     // Detect orders with phone format issues

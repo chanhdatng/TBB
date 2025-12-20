@@ -194,17 +194,22 @@ export const EmployeeProvider = ({ children }) => {
         return department?.name || 'Unknown Department';
     }, [departments]);
 
-    // Refresh data
-    const refreshEmployees = useCallback(() => {
-        const employeesRef = ref(database, 'employees');
-        onValue(employeesRef, (snapshot) => {
+    // Refresh data (one-time fetch to avoid creating duplicate listeners)
+    const refreshEmployees = useCallback(async () => {
+        try {
+            const employeesRef = ref(database, 'employees');
+            const snapshot = await get(employeesRef);
             const data = snapshot.val();
             if (data) {
                 const transformedEmployees = transformEmployeesList(data);
                 setEmployees(transformedEmployees);
                 setLastSync(new Date());
+                console.log(`✅ Refreshed ${transformedEmployees.length} employees`);
             }
-        });
+        } catch (error) {
+            console.error('❌ Error refreshing employees:', error);
+            setError(error.message);
+        }
     }, []);
 
     // Clear error

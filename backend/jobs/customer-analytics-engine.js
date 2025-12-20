@@ -148,14 +148,14 @@ function calculateTrend(customerData) {
  */
 async function computeCustomerAnalytics() {
   const startTime = Date.now();
-  logger.info('🚀 Starting customer analytics computation');
+  logger.info('🚀 Starting customer analytics job...');
 
   try {
     // Initialize Firebase
     db = initializeFirebase();
 
     // Step 1: Fetch data from Firebase
-    logger.info('📥 Fetching data from Firebase...');
+    // logger.info('📥 Fetching data from Firebase...');
 
     const [customersSnapshot, ordersSnapshot] = await Promise.all([
       db.ref('newCustomers').once('value'),
@@ -165,20 +165,20 @@ async function computeCustomerAnalytics() {
     const customers = customersSnapshot.val() || {};
     const orders = ordersSnapshot.val() || {};
 
-    logger.info(`✅ Fetched ${Object.keys(customers).length} customers, ${Object.keys(orders).length} orders`);
+    // logger.info(`✅ Fetched ${Object.keys(customers).length} customers, ${Object.keys(orders).length} orders`);
 
     // Step 2: Aggregate orders per customer
-    logger.info('🔢 Aggregating customer data...');
+    // logger.info('🔢 Aggregating customer data...');
     const aggregated = aggregateCustomerData(customers, orders);
-    logger.info(`✅ Aggregated data for ${aggregated.size} customers with phone numbers`);
+    // logger.info(`✅ Aggregated data for ${aggregated.size} customers with phone numbers`);
 
     // Step 3: Pre-compute all CLVs once (optimization: O(N) instead of O(N²))
-    logger.info('📊 Pre-computing CLV values...');
+    // logger.info('📊 Pre-computing CLV values...');
     const allCLVs = Array.from(aggregated.values()).map(customer => calculateCLV(customer));
-    logger.info(`✅ Pre-computed ${allCLVs.length} CLV values`);
+    // logger.info(`✅ Pre-computed ${allCLVs.length} CLV values`);
 
     // Step 4: Compute metrics for each customer
-    logger.info('📊 Computing customer metrics...');
+    // logger.info('📊 Computing customer metrics...');
     const metricsUpdates = {};
     let processedCount = 0;
 
@@ -188,22 +188,24 @@ async function computeCustomerAnalytics() {
         metricsUpdates[`customerMetrics/${phone}`] = metrics;
         processedCount++;
 
-        // Log progress every 100 customers
+        // Log progress every 100 customers - DISABLED to avoid spam
+        /*
         if (processedCount % 100 === 0) {
           logger.info(`Progress: ${processedCount}/${aggregated.size} customers processed`);
         }
+        */
       } catch (error) {
         logger.error(`Error computing metrics for customer ${phone}`, { error: error.message });
         // Continue processing other customers
       }
     }
 
-    logger.info(`✅ Computed metrics for ${processedCount} customers`);
+    // logger.info(`✅ Computed metrics for ${processedCount} customers`);
 
     // Step 4: Write to Firebase
-    logger.info('💾 Updating customerMetrics in Firebase...');
+    // logger.info('💾 Updating customerMetrics in Firebase...');
     await db.ref().update(metricsUpdates);
-    logger.info(`✅ Updated ${Object.keys(metricsUpdates).length} customer metrics in Firebase`);
+    // logger.info(`✅ Updated ${Object.keys(metricsUpdates).length} customer metrics in Firebase`);
 
     const duration = ((Date.now() - startTime) / 1000).toFixed(2);
     logger.success(`✅ Customer analytics computation completed in ${duration}s`);

@@ -2,8 +2,7 @@ import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { database } from '../firebase';
 import { ref, get, set, push } from "firebase/database";
 import { Loader2 } from 'lucide-react';
-import { useData } from '../contexts/DataContext';
-import { useEmployees } from '../contexts/EmployeeContext';
+import { useStocksData } from '../contexts/StocksDataContext';
 import { 
   User, 
   Search, 
@@ -25,9 +24,8 @@ import {
 } from 'lucide-react';
 
 const StaffCakeCount = () => {
-  const { products, orders, loading: dataLoading } = useData();
-  const { activeEmployees, loading: employeeLoading } = useEmployees();
-  
+  const { products, orders, activeEmployees, stocks, loading } = useStocksData();
+
   const [selectedStaff, setSelectedStaff] = useState(() => {
     return localStorage.getItem('countCakeSelectedStaff') || '';
   });
@@ -40,7 +38,6 @@ const StaffCakeCount = () => {
   const [productionQuantities, setProductionQuantities] = useState({});
   const [lastSavedQuantities, setLastSavedQuantities] = useState({});
   const [isUpdating, setIsUpdating] = useState(false);
-  const [isSyncing, setIsSyncing] = useState(true);
   const [isScrolled, setIsScrolled] = useState(false);
   const [showFooter, setShowFooter] = useState(true);
   const lastScrollY = useRef(window.scrollY);
@@ -143,23 +140,14 @@ const StaffCakeCount = () => {
     }
   }, [otherName]);
 
-  // Load stocks once on mount
+  // Initialize stocks from context (only when stocks data is loaded)
   useEffect(() => {
-    const fetchStocks = async () => {
-      const stocksRef = ref(database, 'stocks');
-      try {
-        const snapshot = await get(stocksRef);
-        const data = snapshot.val() || {};
-        setProductionQuantities(data);
-        setLastSavedQuantities(data);
-      } catch (error) {
-        console.error("Error fetching stocks:", error);
-      } finally {
-        setIsSyncing(false);
-      }
-    };
-    fetchStocks();
-  }, []);
+    if (!loading && stocks) {
+      setProductionQuantities(stocks);
+      setLastSavedQuantities(stocks);
+      console.log('✅ Initialized stocks from context');
+    }
+  }, [loading, stocks]);
 
   const hasChanges = useMemo(() => {
     return JSON.stringify(productionQuantities) !== JSON.stringify(lastSavedQuantities);
@@ -382,7 +370,7 @@ const StaffCakeCount = () => {
     }
   };
 
-  if (dataLoading || employeeLoading || isSyncing) {
+  if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>

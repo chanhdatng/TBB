@@ -1,6 +1,6 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { database } from '../firebase';
-import { ref, onValue } from "firebase/database";
+import { ref, onValue, get, query, orderByChild, startAt } from "firebase/database";
 
 const DataContext = createContext();
 
@@ -22,6 +22,9 @@ export const DataProvider = ({ children }) => {
     const [customerMetrics, setCustomerMetrics] = useState({});
     const [customerMetricsLoading, setCustomerMetricsLoading] = useState(true);
 
+    // OrderCounts Metadata (Phase 4)
+    const [orderCounts, setOrderCounts] = useState({});
+
     // Helper to format date as YYYY-MM-DD in local time
     const formatLocalDate = (date) => {
         const year = date.getFullYear();
@@ -35,6 +38,23 @@ export const DataProvider = ({ children }) => {
         return new Date((timestamp + 978307200) * 1000);
     };
 
+    /**
+     * Calculate timestamp for 90 days ago in CFAbsoluteTime format
+     * CFAbsoluteTime = seconds since 2001-01-01 00:00:00 UTC
+     * Fixed: Use UTC to avoid timezone offset issues (Phase 1 critical fix)
+     */
+    const getLast90DaysTimestamp = () => {
+        const date = new Date();
+        date.setUTCDate(date.getUTCDate() - 90);
+        date.setUTCHours(0, 0, 0, 0);
+
+        // Convert JavaScript timestamp (ms since 1970) to CFAbsoluteTime
+        const jsTimestamp = date.getTime(); // milliseconds
+        const cfAbsoluteTime = (jsTimestamp / 1000) - 978307200; // seconds since 2001
+
+        return cfAbsoluteTime;
+    };
+
     useEffect(() => {
         // Fallback timeout - if Firebase doesn't respond in 10 seconds, stop loading anyway
         const loadingTimeout = setTimeout(() => {
@@ -44,14 +64,20 @@ export const DataProvider = ({ children }) => {
             setCustomerMetricsLoading(false);
         }, 10000);
 
-        const ordersRef = ref(database, 'orders');
         const preOrdersRef = ref(database, 'preorders');
 
         let ordersUnsubscribe;
         let preOrdersUnsubscribe;
 
-        // Fetch Orders
-        ordersUnsubscribe = onValue(ordersRef, (snapshot) => {
+        // Fetch Orders (Limited to last 90 days for bandwidth optimization)
+        const cfTime90Days = getLast90DaysTimestamp();
+        const ordersQuery = query(
+            ref(database, 'orders'),
+            orderByChild('orderDate'),
+            startAt(cfTime90Days)
+        );
+
+        ordersUnsubscribe = onValue(ordersQuery, (snapshot) => {
             const data = snapshot.val();
             if (data) {
                 const ordersList = Object.keys(data).map(key => {
@@ -229,37 +255,8 @@ export const DataProvider = ({ children }) => {
             }
         });
 
-        // Fetch Product Analytics (Phase 4)
-        const analyticsRef = ref(database, 'productAnalytics');
-        let analyticsUnsubscribe;
-        analyticsUnsubscribe = onValue(analyticsRef, (snapshot) => {
-            const data = snapshot.val();
-            setProductAnalytics(data || {});
-            setAnalyticsLoading(false);
-        });
-
-        // Fetch Global Rankings (Phase 4)
-        const rankingsRef = ref(database, 'globalRankings/current');
-        let rankingsUnsubscribe;
-        rankingsUnsubscribe = onValue(rankingsRef, (snapshot) => {
-            const data = snapshot.val();
-            setGlobalRankings(data);
-        });
-
-        // Fetch Customer Metrics (Phase 2)
-        const customerMetricsRef = ref(database, 'customerMetrics');
-        let customerMetricsUnsubscribe;
-        customerMetricsUnsubscribe = onValue(customerMetricsRef, (snapshot) => {
-            const data = snapshot.val();
-            setCustomerMetrics(data || {});
-            setCustomerMetricsLoading(false);
-            if (process.env.NODE_ENV === 'development') {
-                console.log(`✅ Loaded metrics for ${Object.keys(data || {}).length} customers`);
-            }
-        }, (error) => {
-            console.error('❌ Error fetching customerMetrics:', error);
-            setCustomerMetricsLoading(false); // Prevent infinite loading
-        });
+        // Analytics converted to pull-based (Phase 2) - no more real-time listeners
+        // Fetch functions defined below, called on mount
 
         setLoading(false);
 
@@ -269,10 +266,71 @@ export const DataProvider = ({ children }) => {
             if (preOrdersUnsubscribe) preOrdersUnsubscribe();
             if (customersUnsubscribe) customersUnsubscribe();
             if (productsUnsubscribe) productsUnsubscribe();
-            if (analyticsUnsubscribe) analyticsUnsubscribe();
-            if (rankingsUnsubscribe) rankingsUnsubscribe();
-            if (customerMetricsUnsubscribe) customerMetricsUnsubscribe();
+            // Analytics listeners removed - using fetch instead (Phase 2)
         };
+    }, []);
+
+    // Fetch Product Analytics (Phase 2: Pull-based)
+    const fetchProductAnalytics = useCallback(async () => {
+        setAnalyticsLoading(true);
+        try {
+            const snapshot = await get(ref(database, 'productAnalytics'));
+            setProductAnalytics(snapshot.val() || {});
+            console.log('✅ Loaded product analytics on-demand');
+        } catch (error) {
+            console.error('❌ Error fetching productAnalytics:', error);
+        } finally {
+            setAnalyticsLoading(false);
+        }
+    }, []);
+
+    // Fetch Global Rankings (Phase 2: Pull-based)
+    const fetchGlobalRankings = useCallback(async () => {
+        try {
+            const snapshot = await get(ref(database, 'globalRankings/current'));
+            setGlobalRankings(snapshot.val());
+            console.log('✅ Loaded global rankings on-demand');
+        } catch (error) {
+            console.error('❌ Error fetching globalRankings:', error);
+        }
+    }, []);
+
+    // Fetch Customer Metrics (Phase 2: Pull-based)
+    const fetchCustomerMetrics = useCallback(async () => {
+        setCustomerMetricsLoading(true);
+        try {
+            const snapshot = await get(ref(database, 'customerMetrics'));
+            const data = snapshot.val();
+            setCustomerMetrics(data || {});
+            if (process.env.NODE_ENV === 'development') {
+                console.log(`✅ Loaded metrics for ${Object.keys(data || {}).length} customers on-demand`);
+            }
+        } catch (error) {
+            console.error('❌ Error fetching customerMetrics:', error);
+        } finally {
+            setCustomerMetricsLoading(false);
+        }
+    }, []);
+
+    // Fetch OrderCounts metadata (Phase 4)
+    const fetchOrderCounts = useCallback(async () => {
+        try {
+            const snapshot = await get(ref(database, 'metadata/orderCounts'));
+            setOrderCounts(snapshot.val() || {});
+            console.log('✅ Loaded orderCounts metadata');
+        } catch (error) {
+            console.error('❌ Error fetching orderCounts:', error);
+        }
+    }, []);
+
+    // Call analytics fetch functions once on mount (Phase 2 + Phase 4)
+    // Empty deps array - run only once, preventing potential infinite loop
+    useEffect(() => {
+        fetchProductAnalytics();
+        fetchGlobalRankings();
+        fetchCustomerMetrics();
+        fetchOrderCounts();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     // Analytics Helper Functions (Phase 4)
@@ -307,12 +365,19 @@ export const DataProvider = ({ children }) => {
             // Customer analytics data (Phase 2)
             customerMetrics,
             customerMetricsLoading,
+            // OrderCounts metadata (Phase 4)
+            orderCounts,
             // Analytics helpers (Phase 4)
             getProductAnalytics,
             getTopSellers,
             getSlowMovers,
             getTrending,
-            getTopRevenue
+            getTopRevenue,
+            // Analytics fetch functions (Phase 2: Pull-based)
+            fetchCustomerMetrics,
+            fetchProductAnalytics,
+            fetchGlobalRankings,
+            fetchOrderCounts
         }}>
             {children}
         </DataContext.Provider>

@@ -57,7 +57,7 @@ function aggregateCustomerData(customers, orders) {
     });
   });
 
-  logger.info(`Initialized ${customerMap.size} customers with phone numbers`);
+    // logger.info(`Initialized ${customerMap.size} customers with phone numbers`);
 
   // Aggregate orders
   let matchedOrders = 0;
@@ -81,7 +81,7 @@ function aggregateCustomerData(customers, orders) {
     matchedOrders++;
   });
 
-  logger.info(`Matched ${matchedOrders} orders, ${unmatchedOrders} unmatched`);
+    // logger.info(`Matched ${matchedOrders} orders, ${unmatchedOrders} unmatched`);
 
   // Calculate basic metrics for each customer
   customerMap.forEach((customer, phone) => {
@@ -119,7 +119,7 @@ function aggregateCustomerData(customers, orders) {
       : 0;
   });
 
-  logger.info(`Calculated basic metrics for ${customerMap.size} customers`);
+    // logger.info(`Calculated basic metrics for ${customerMap.size} customers`);
 
   return customerMap;
 }

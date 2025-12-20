@@ -19,6 +19,7 @@ import EmployeesPage from './pages/EmployeesPage';
 import StaffCakeCount from './pages/StaffCakeCount';
 import { DataProvider } from './contexts/DataContext';
 import { EmployeeProvider } from './contexts/EmployeeContext';
+import { StocksDataProvider } from './contexts/StocksDataContext';
 import ToastProvider from './contexts/ToastContext';
 import { Loader2 } from 'lucide-react';
 
@@ -132,7 +133,11 @@ function App() {
               <Route path="/orders" element={<CustomerPreOrder />} />
 
               <Route path="/order-confirmation/:orderId" element={<OrderConfirmation />} />
-              <Route path="/staff/stocks" element={<StaffCakeCount />} />
+              <Route path="/staff/stocks" element={
+                <StocksDataProvider>
+                  <StaffCakeCount />
+                </StocksDataProvider>
+              } />
               <Route path="/menu-create" element={<MenuCreate />} />
               <Route path="/login" element={<Login />} />
               <Route path="/admin" element={
