@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, CakeSlice, User, MapPin, Phone, Edit2, Trash2, Facebook, Instagram, Globe, UserPlus, Check, FileText } from 'lucide-react';
+import { X, CakeSlice, User, MapPin, Phone, Edit2, Trash2, Facebook, Instagram, Globe, UserPlus, Check, FileText, StickyNote } from 'lucide-react';
 import { copyToClipboard } from '../../utils/clipboard';
 import { useData } from '../../contexts/DataContext';
 import { ref, set } from "firebase/database";
@@ -176,6 +176,19 @@ const OrderDetailsModal = ({ isOpen, onClose, order, onEdit, onDelete }) => {
                             </div>
                         </div>
                     </div>
+
+                    {/* Order Note */}
+                    {order.originalData?.orderNote && (
+                        <div className="mb-4 p-3 bg-yellow-50 rounded-xl border border-yellow-200">
+                            <div className="flex items-start gap-2">
+                                <StickyNote size={16} className="text-yellow-600 mt-0.5 flex-shrink-0" />
+                                <div>
+                                    <div className="text-xs font-medium text-yellow-700 mb-1">Ghi chú</div>
+                                    <div className="text-sm text-yellow-800">{order.originalData.orderNote}</div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
 
                     {/* Items List */}
                     <h4 className="text-sm font-bold text-gray-900 uppercase tracking-wider mb-3">Items ({order.items.length})</h4>

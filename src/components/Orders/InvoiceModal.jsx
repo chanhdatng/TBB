@@ -296,9 +296,7 @@ const InvoiceModal = ({ isOpen, onClose, order, onReady }) => {
             if (navigator.canShare && navigator.canShare({ files: [file] })) {
                 try {
                     await navigator.share({
-                        files: [file],
-                        title: `Hóa đơn #${order.id}`,
-                        text: `Hóa đơn đơn hàng #${order.id} từ The Butter Bake`
+                        files: [file]
                     });
                     showToast('Đã chia sẻ hóa đơn thành công', 'success');
                 } catch (shareError) {
@@ -449,67 +447,67 @@ const InvoiceModal = ({ isOpen, onClose, order, onReady }) => {
                             {/* Customer Info & Calendar */}
                             <div className="mb-6 border border-gray-200 rounded-lg p-3 flex justify-between items-start gap-3">
                                 {/* Left: Customer Info (Vertical) */}
-                                <div className="flex-1 space-y-2">
+                                <div className="flex-1 space-y-3">
                                     <div>
-                                        <span className="text-gray-500 text-[10px] uppercase tracking-wider block mb-0.5">Khách hàng</span>
-                                        <p className="font-bold text-gray-900 text-base">{order.customer.name}</p>
+                                        <span className="text-gray-400 text-[11px] uppercase tracking-wider block mb-0.5 font-bold">Khách hàng</span>
+                                        <p className="font-bold text-gray-900 text-lg">{order.customer.name}</p>
+                                    </div>
+                                    <div className="flex gap-6">
+                                        <div>
+                                            <span className="text-gray-400 text-[11px] uppercase tracking-wider block mb-0.5 font-bold">Điện thoại</span>
+                                            <p className="font-bold text-gray-900 font-mono text-base">{order.customer.phone}</p>
+                                        </div>
+                                        <div>
+                                            <span className="text-gray-400 text-[11px] uppercase tracking-wider block mb-0.5 font-bold">Thời gian nhận</span>
+                                            <p className="font-bold text-primary text-base uppercase">{order.timeline.received.time}</p>
+                                        </div>
                                     </div>
                                     <div>
-                                        <span className="text-gray-500 text-[10px] uppercase tracking-wider block mb-0.5">Điện thoại</span>
-                                        <p className="font-semibold text-gray-900 font-mono text-sm">{order.customer.phone}</p>
-                                    </div>
-                                    <div>
-                                        <span className="text-gray-500 text-[10px] uppercase tracking-wider block mb-0.5">Địa chỉ</span>
-                                        <p className="font-medium text-gray-900 leading-tight text-sm">{order.customer.address}</p>
+                                        <span className="text-gray-400 text-[11px] uppercase tracking-wider block mb-0.5 font-bold">Địa chỉ</span>
+                                        <p className="font-bold text-gray-900 leading-tight text-sm">{order.customer.address}</p>
                                     </div>
                                 </div>
 
                                 {/* Right: Calendar Component */}
                                 <div className="flex flex-col items-center">
-                                    <span className="text-gray-500 text-[10px] uppercase tracking-wider mb-1">Thời gian nhận</span>
-                                    <div className="bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden w-20 text-center">
-                                        <div className="bg-red-500 text-white text-[10px] font-bold py-0.5 uppercase tracking-wide">
-                                            {order.timeline.received.raw.toLocaleDateString('vi-VN', { month: 'long' })}
+                                    <div className="bg-white border-2 border-gray-100 rounded-xl shadow-sm overflow-hidden w-24 text-center">
+                                        <div className="bg-red-500 text-white text-[11px] font-bold py-1 uppercase tracking-widest">
+                                            {order.timeline.received.raw.toLocaleDateString('vi-VN', { month: 'short' }).replace('.', '')}
                                         </div>
-                                        <div className="py-1">
-                                            <span className="text-2xl font-bold text-gray-900 block leading-none">
+                                        <div className="py-2">
+                                            <span className="text-4xl font-black text-gray-900 block leading-none tracking-tighter">
                                                 {order.timeline.received.raw.getDate()}
                                             </span>
-                                            <span className="text-[10px] text-gray-500 uppercase font-medium mt-0.5 block">
-                                                {order.timeline.received.raw.toLocaleDateString('vi-VN', { weekday: 'short' })}
+                                            <span className="text-[11px] text-gray-400 uppercase font-bold mt-1 block tracking-wider">
+                                                {order.timeline.received.raw.toLocaleDateString('vi-VN', { weekday: 'long' })}
                                             </span>
                                         </div>
-                                    </div>
-                                    <div className="mt-1 text-center">
-                                        <span className="inline-block px-1.5 py-0.5 bg-gray-100 rounded text-[10px] font-bold text-gray-700">
-                                            {order.timeline.received.time}
-                                        </span>
                                     </div>
                                 </div>
                             </div>
 
                             {/* Items Table */}
-                            <div className="mb-6">
-                                <table className="w-full text-xs">
+                            <div className="mb-4">
+                                <table className="w-full text-sm">
                                     <thead>
                                         <tr className="bg-gray-50 border-y border-gray-200">
-                                            <th className="py-2 px-2 text-left font-semibold text-gray-700">STT</th>
-                                            <th className="py-2 px-2 text-left font-semibold text-gray-700">Tên món</th>
-                                            <th className="py-2 px-2 text-center font-semibold text-gray-700">SL</th>
-                                            <th className="py-2 px-2 text-right font-semibold text-gray-700">Đơn giá</th>
-                                            <th className="py-2 px-2 text-right font-semibold text-gray-700">Thành tiền</th>
+                                            <th className="py-2.5 px-2 text-left font-bold text-gray-700 text-[10px] uppercase tracking-wider">STT</th>
+                                            <th className="py-2.5 px-2 text-left font-bold text-gray-700 text-[10px] uppercase tracking-wider">Tên món</th>
+                                            <th className="py-2.5 px-2 text-center font-bold text-gray-700 text-[10px] uppercase tracking-wider">SL</th>
+                                            <th className="py-2.5 px-2 text-right font-bold text-gray-700 text-[10px] uppercase tracking-wider">Đơn giá</th>
+                                            <th className="py-2.5 px-2 text-right font-bold text-gray-700 text-[10px] uppercase tracking-wider">Thành tiền</th>
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-gray-100">
                                         {order.items.map((item, index) => (
                                             <tr key={index}>
-                                                <td className="py-2 px-2 text-gray-500">{index + 1}</td>
-                                                <td className="py-2 px-2 text-gray-900 font-medium">{item.name}</td>
-                                                <td className="py-2 px-2 text-center text-gray-900">{item.amount}</td>
-                                                <td className="py-2 px-2 text-right text-gray-900">
+                                                <td className="py-3 px-2 text-gray-500 text-xs">{index + 1}</td>
+                                                <td className="py-3 px-2 text-gray-900 font-bold text-base">{item.name}</td>
+                                                <td className="py-3 px-2 text-center text-gray-900 font-bold text-base">x{item.amount}</td>
+                                                <td className="py-3 px-2 text-right text-gray-900 text-xs">
                                                     {new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(item.price)}
                                                 </td>
-                                                <td className="py-2 px-2 text-right text-gray-900 font-medium">
+                                                <td className="py-3 px-2 text-right text-gray-900 font-bold">
                                                     {new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(item.price * item.amount)}
                                                 </td>
                                             </tr>
@@ -517,6 +515,16 @@ const InvoiceModal = ({ isOpen, onClose, order, onReady }) => {
                                     </tbody>
                                 </table>
                             </div>
+
+                            {/* Order Note - Important for cake specifications */}
+                            {order.originalData?.orderNote && (
+                                <div className="mb-6 p-3 bg-orange-50/50 border border-orange-100 rounded-lg">
+                                    <span className="text-orange-600 text-[10px] font-bold uppercase tracking-wider block mb-1">Ghi chú / Thông số bánh</span>
+                                    <p className="text-sm text-gray-800 font-medium leading-relaxed italic">
+                                        "{order.originalData.orderNote}"
+                                    </p>
+                                </div>
+                            )}
 
                             {/* Footer Section: QR & Totals */}
                             <div className="flex-1 flex flex-col space-y-4">
@@ -555,48 +563,44 @@ const InvoiceModal = ({ isOpen, onClose, order, onReady }) => {
                                         <p className="text-[9px] md:text-[10px] font-mono text-gray-400 mt-0.5">{bankId} - {accountNo}</p>
                                     </div>
 
-                                    {/* Main Totals - Aligned with table columns using same table structure */}
+                                    {/* Main Totals - Aligned with table columns */}
                                     <div className="flex-1">
                                         <table className="w-full text-xs">
                                             <tbody>
                                                 <tr>
-                                                    <td className="py-2 px-2"></td>
-                                                    <td className="py-2 px-2"></td>
-                                                    <td className="py-2 px-2 text-left text-gray-500">Tạm tính:</td>
-                                                    <td className="py-2 px-2"></td>
-                                                    <td className="py-2 px-2 text-right font-medium text-gray-900">
+                                                    <td className="py-1.5 px-2 text-left text-gray-500 font-medium">Tạm tính:</td>
+                                                    <td className="py-1.5 px-2 text-right font-bold text-gray-900">
                                                         {new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(subtotal)}
                                                     </td>
                                                 </tr>
                                                 <tr>
-                                                    <td className="py-2 px-2"></td>
-                                                    <td className="py-2 px-2"></td>
-                                                    <td className="py-2 px-2 text-left text-gray-500">
+                                                    <td className="py-1.5 px-2 text-left text-gray-500 font-medium">
                                                         Giảm giá {discountValue <= 100 && discountValue > 0 ? `(${discountValue}%)` : ''}:
                                                     </td>
-                                                    <td className="py-2 px-2"></td>
-                                                    <td className={`py-2 px-2 text-right font-medium ${discount > 0 ? 'text-green-600' : 'text-gray-900'}`}>
+                                                    <td className={`py-1.5 px-2 text-right font-bold ${discount > 0 ? 'text-green-600' : 'text-gray-900'}`}>
                                                         -{new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(discount)}
                                                     </td>
                                                 </tr>
                                                 <tr>
-                                                    <td className="py-2 px-2"></td>
-                                                    <td className="py-2 px-2"></td>
-                                                    <td className="py-2 px-2 text-left text-gray-500">Phí vận chuyển:</td>
-                                                    <td className="py-2 px-2"></td>
-                                                    <td className="py-2 px-2 text-right font-medium text-gray-900">
+                                                    <td className="py-1.5 px-2 text-left text-gray-500 font-medium">Phí vận chuyển:</td>
+                                                    <td className="py-1.5 px-2 text-right font-bold text-gray-900">
                                                         {new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(shipping)}
                                                     </td>
                                                 </tr>
+                                                {otherFee > 0 && (
+                                                    <tr>
+                                                        <td className="py-1.5 px-2 text-left text-gray-500 font-medium">Phí khác:</td>
+                                                        <td className="py-1.5 px-2 text-right font-bold text-gray-900">
+                                                            {new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(otherFee)}
+                                                        </td>
+                                                    </tr>
+                                                )}
                                                 <tr>
-                                                    <td className="py-2 px-2 pt-1"></td>
-                                                    <td className="py-2 px-2 pt-1"></td>
-                                                    <td className="py-2 px-2 pt-1 border-t border-gray-200 text-left">
-                                                        <span className="text-sm font-bold text-gray-900">Tổng cộng:</span>
+                                                    <td className="py-4 px-2 border-t-2 border-primary/20 text-left">
+                                                        <span className="text-sm font-black text-gray-900 uppercase">Tổng cộng:</span>
                                                     </td>
-                                                    <td className="py-2 px-2 pt-1 border-t border-gray-200"></td>
-                                                    <td className="py-2 px-2 pt-1 border-t border-gray-200 text-right">
-                                                        <span className="text-lg md:text-xl font-bold text-primary">
+                                                    <td className="py-4 px-2 border-t-2 border-primary/20 text-right">
+                                                        <span className="text-2xl md:text-3xl font-black text-primary">
                                                             {new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(total)}
                                                         </span>
                                                     </td>
@@ -605,29 +609,12 @@ const InvoiceModal = ({ isOpen, onClose, order, onReady }) => {
                                         </table>
                                     </div>
                                 </div>
-
-                                {/* Additional Fees - Aligned with table columns */}
-                                {otherFee > 0 && (
-                                    <table className="w-full text-xs">
-                                        <tbody>
-                                            <tr>
-                                                <td className="py-2 px-2"></td>
-                                                <td className="py-2 px-2"></td>
-                                                <td className="py-2 px-2 text-left text-gray-500">Phí khác:</td>
-                                                <td className="py-2 px-2"></td>
-                                                <td className="py-2 px-2 text-right font-medium text-gray-900">
-                                                    {new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(otherFee)}
-                                                </td>
-                                            </tr>
-                                        </tbody>
-                                    </table>
-                                )}
                             </div>
 
                             {/* Thank you message - At the bottom of the page */}
-                            <div className="text-center pt-4 mt-auto">
-                                <p className="text-[10px] font-medium text-gray-700">Cảm ơn quý khách!</p>
-                                <p className="text-[9px] text-gray-500 mt-0.5">Hẹn gặp lại</p>
+                            <div className="text-center pt-4 mt-auto border-t border-gray-100 italic">
+                                <p className="text-xs font-bold text-gray-800">Cảm ơn quý khách!</p>
+                                <p className="text-[10px] text-gray-500 mt-0.5">The Butter Bake - Chúc bạn một ngày ngọt ngào</p>
                             </div>
                         </div>
                     </div>

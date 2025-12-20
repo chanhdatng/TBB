@@ -7,7 +7,7 @@ import {
     RefreshCw, Users, AlertCircle, CheckCircle, Database, Search,
     Filter, Phone, Calendar, Key, UserCheck, Trash2, Sparkles,
     FileText, ShieldCheck, Zap, TrendingUp, Activity, Settings,
-    Download, Upload, Archive, PhoneOff
+    Download, Upload, Archive, PhoneOff, Cookie, Clock
 } from 'lucide-react';
 import ConfirmSyncModal from '../components/DataSync/ConfirmSyncModal';
 import PhoneFormatModal from '../components/DataSync/PhoneFormatModal';
@@ -16,6 +16,8 @@ import RenameOrderKeysModal from '../components/DataSync/RenameOrderKeysModal';
 import CustomerFieldsModal from '../components/DataSync/CustomerFieldsModal';
 import CleanupModal from '../components/DataSync/CleanupModal';
 import InvalidPhonesModal from '../components/DataSync/InvalidPhonesModal';
+import ProductNameStandardizeModal from '../components/DataSync/ProductNameStandardizeModal';
+import DeliveryTimeSlotModal from '../components/DataSync/DeliveryTimeSlotModal';
 import SkeletonCard from '../components/Common/SkeletonCard';
 import { fadeInVariants, staggerChildrenVariants, itemVariants } from '../utils/animations';
 
@@ -31,6 +33,8 @@ const DataSync = () => {
     const [cleanupData, setCleanupData] = useState([]);
     const [isCleanupLoading, setIsCleanupLoading] = useState(false);
     const [showInvalidPhonesModal, setShowInvalidPhonesModal] = useState(false);
+    const [showProductNameModal, setShowProductNameModal] = useState(false);
+    const [showTimeSlotModal, setShowTimeSlotModal] = useState(false);
     const [firebaseCustomers, setFirebaseCustomers] = useState([]);
 
     /**
@@ -266,6 +270,75 @@ const DataSync = () => {
             }));
     }, [orders, activeTab]);
 
+    // Detect orders with non-standard product names
+    /**
+     * PERFORMANCE OPTIMIZATION: Lazy computation based on activeTab
+     * Only computes when tab needs this data (standardize, overview)
+     */
+    const ordersWithNonStandardProductNames = useMemo(() => {
+        // Lazy computation: Skip if tab doesn't need this data
+        if (activeTab !== 'standardize' && activeTab !== 'overview') {
+            return [];
+        }
+
+        if (!orders) return [];
+
+        // Helper function to check if name should be standardized to Brazilian Cheesebread
+        const shouldStandardizeToBrazilianCheesebread = (name) => {
+            const normalized = name.trim().toLowerCase();
+
+            // Exact matches after normalization
+            const exactMatches = [
+                'brazilian cheese bread',
+                'brazilian cheesebread',
+                'cheese bread',
+                'cheesebread',
+                'brazillian cheesebread', // common typo
+                'cheesebreead', // typo
+                'pão de queijo'
+            ];
+
+            return exactMatches.includes(normalized);
+        };
+
+        const issueOrders = [];
+
+        orders.forEach(order => {
+            if (!order.items || order.items.length === 0) return;
+
+            const itemsNeedingFix = order.items.filter(item => {
+                const itemName = item.name;
+                if (!itemName) return false;
+
+                const trimmedName = itemName.trim();
+
+                // Check if needs standardization AND is not already correct
+                return shouldStandardizeToBrazilianCheesebread(itemName) &&
+                       trimmedName !== 'Brazilian Cheesebread';
+            });
+
+            if (itemsNeedingFix.length > 0) {
+                issueOrders.push(order);
+            }
+        });
+
+        return issueOrders;
+    }, [orders, activeTab]);
+
+    // Detect orders missing deliveryTimeSlot
+    const ordersWithoutTimeSlot = useMemo(() => {
+        if (activeTab !== 'standardize' && activeTab !== 'overview') {
+            return [];
+        }
+
+        if (!orders) return [];
+
+        return orders.filter(order => {
+            // Check if order has no deliveryTimeSlot in originalData
+            return !order.originalData?.deliveryTimeSlot;
+        });
+    }, [orders, activeTab]);
+
     /**
      * PERFORMANCE OPTIMIZATION: Split stats into basic and issue stats
      * Basic stats always computed, issue stats conditional on activeTab
@@ -288,6 +361,8 @@ const DataSync = () => {
                 phoneIssues: 0,
                 orderIdIssues: 0,
                 keyIssues: 0,
+                productNameIssues: 0,
+                timeSlotIssues: 0,
                 customersMissingRequiredFields: 0,
                 duplicateCount: 0,
                 totalIssues: 0
@@ -297,6 +372,8 @@ const DataSync = () => {
         const phoneIssues = ordersWithPhoneIssues.length;
         const orderIdIssues = customersMissingOrderIds.length;
         const keyIssues = ordersWithWrongKeys.length;
+        const productNameIssues = ordersWithNonStandardProductNames.length;
+        const timeSlotIssues = ordersWithoutTimeSlot.length;
 
         // Calculate missing fields
         const processedPhones = new Set();
@@ -315,12 +392,14 @@ const DataSync = () => {
         }).length || 0;
 
         const duplicateCount = basicStats.totalCustomers - processedPhones.size;
-        const totalIssues = phoneIssues + orderIdIssues + keyIssues + customersMissingRequiredFields + duplicateCount;
+        const totalIssues = phoneIssues + orderIdIssues + keyIssues + productNameIssues + timeSlotIssues + customersMissingRequiredFields + duplicateCount;
 
         return {
             phoneIssues,
             orderIdIssues,
             keyIssues,
+            productNameIssues,
+            timeSlotIssues,
             customersMissingRequiredFields,
             duplicateCount,
             totalIssues
@@ -330,6 +409,8 @@ const DataSync = () => {
         ordersWithPhoneIssues,
         customersMissingOrderIds,
         ordersWithWrongKeys,
+        ordersWithNonStandardProductNames,
+        ordersWithoutTimeSlot,
         customers,
         orders,
         normalizePhone,
@@ -727,6 +808,8 @@ const DataSync = () => {
                                 <div className="space-y-3">
                                     {[
                                         { label: 'Phone Format Issues', count: stats.phoneIssues, color: 'orange' },
+                                        { label: 'Product Name Issues', count: stats.productNameIssues, color: 'amber' },
+                                        { label: 'Missing Time Slots', count: stats.timeSlotIssues, color: 'cyan' },
                                         { label: 'Missing Order IDs', count: stats.orderIdIssues, color: 'indigo' },
                                         { label: 'Wrong Firebase Keys', count: stats.keyIssues, color: 'rose' },
                                         { label: 'Missing Required Fields', count: stats.customersMissingRequiredFields, color: 'purple' },
@@ -759,6 +842,18 @@ const DataSync = () => {
                                             <span className="font-medium text-gray-700">Fix Phone Formats</span>
                                         </div>
                                         <span className="text-orange-600 font-semibold">{stats.phoneIssues}</span>
+                                    </button>
+
+                                    <button
+                                        onClick={() => setShowProductNameModal(true)}
+                                        disabled={stats.productNameIssues === 0}
+                                        className="w-full flex items-center justify-between p-3 rounded-xl hover:bg-amber-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                    >
+                                        <div className="flex items-center gap-3">
+                                            <Cookie className="text-amber-600" size={20} />
+                                            <span className="font-medium text-gray-700">Standardize Product Names</span>
+                                        </div>
+                                        <span className="text-amber-600 font-semibold">{stats.productNameIssues}</span>
                                     </button>
 
                                     <button
@@ -920,6 +1015,32 @@ const DataSync = () => {
                                             >
                                                 <Key size={18} />
                                                 Rename Keys ({stats.keyIssues})
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Missing Time Slot */}
+                            {stats.timeSlotIssues > 0 && (
+                                <div className="bg-cyan-50 border border-cyan-200 rounded-xl p-6">
+                                    <div className="flex items-start gap-4">
+                                        <div className="w-12 h-12 bg-cyan-100 rounded-xl flex items-center justify-center flex-shrink-0">
+                                            <Clock className="text-cyan-600" size={24} />
+                                        </div>
+                                        <div className="flex-1">
+                                            <h3 className="text-lg font-semibold text-gray-900 mb-1">
+                                                Missing Time Slots
+                                            </h3>
+                                            <p className="text-sm text-gray-600 mb-3">
+                                                Found <strong>{stats.timeSlotIssues} orders</strong> without delivery time slot.
+                                            </p>
+                                            <button
+                                                onClick={() => setShowTimeSlotModal(true)}
+                                                className="flex items-center gap-2 bg-cyan-600 hover:bg-cyan-700 text-white px-4 py-2 rounded-lg font-medium transition-colors shadow-lg shadow-cyan-600/30"
+                                            >
+                                                <Clock size={18} />
+                                                Add Time Slots ({stats.timeSlotIssues})
                                             </button>
                                         </div>
                                     </div>
@@ -1107,6 +1228,18 @@ const DataSync = () => {
                 isOpen={showInvalidPhonesModal}
                 onClose={() => setShowInvalidPhonesModal(false)}
                 customers={customersWithInvalidPhones}
+            />
+
+            <ProductNameStandardizeModal
+                isOpen={showProductNameModal}
+                onClose={() => setShowProductNameModal(false)}
+                orders={orders}
+            />
+
+            <DeliveryTimeSlotModal
+                isOpen={showTimeSlotModal}
+                onClose={() => setShowTimeSlotModal(false)}
+                orders={ordersWithoutTimeSlot}
             />
         </motion.div>
     );

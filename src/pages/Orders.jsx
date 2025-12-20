@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Search, Filter, Plus, MoreHorizontal, ArrowUpDown, ArrowUp, ArrowDown, CheckCircle, CheckCircle2, Clock, XCircle, Trash2, Edit2, User, CakeSlice, Layers } from 'lucide-react';
+import { Search, Filter, Plus, MoreHorizontal, ArrowUpDown, ArrowUp, ArrowDown, CheckCircle, CheckCircle2, Clock, XCircle, Trash2, Edit2, User, CakeSlice, Layers, StickyNote } from 'lucide-react';
 import CreateOrderModal from '../components/Orders/CreateOrderModal';
 import DateSelector from '../components/Orders/DateSelector';
 import AdvancedFilterModal from '../components/Orders/AdvancedFilterModal';
@@ -113,36 +113,6 @@ const Orders = () => {
 
                     // Background work starts here
                     await set(ref(database, 'orders/' + newOrder.id), newOrder);
-
-                    // Check if customer exists (normalize phone for comparison)
-                    const normalizePhone = (p) => (p ? String(p).replace(/\D/g, '') : '');
-                    const newPhoneNormalized = normalizePhone(newOrder.customer.phone);
-
-                    const customerExists = customers.some(c => c && c.phone && normalizePhone(c.phone) === newPhoneNormalized);
-
-                    if (!customerExists) {
-                        console.log("Creating new customer:", newOrder.customer);
-                        // Create new customer
-                        const newCustomer = {
-                            id: newOrder.customer.id,
-                            name: newOrder.customer.name,
-                            phone: newOrder.customer.phone,
-                            address: newOrder.customer.address,
-                            createDate: newOrder.createDate,
-                            lastOrderId: newOrder.id, // Set lastOrderId for new customer
-                            socialLink: newOrder.customer.socialLink || ''
-                        };
-                        await set(ref(database, 'newCustomers/' + newCustomer.phone), newCustomer);
-                    } else {
-                        // Update existing customer's lastOrderId
-                        const existingCustomer = customers.find(c => c && c.phone && normalizePhone(c.phone) === newPhoneNormalized);
-                        if (existingCustomer) {
-                            console.log("Updating existing customer lastOrderId:", existingCustomer.phone);
-                            await update(ref(database, 'newCustomers/' + existingCustomer.phone), {
-                                lastOrderId: newOrder.id
-                            });
-                        }
-                    }
 
                     // Success Toast
                     showToast('Tạo đơn thành công!', 'success');
@@ -541,6 +511,14 @@ const Orders = () => {
                                                     >
                                                         <HighlightText text={order.customer.address} highlight={searchQuery} />
                                                     </div>
+                                                    {order.originalData?.orderNote && (
+                                                        <div
+                                                            className="text-xs text-orange-500 font-medium mt-1 line-clamp-1"
+                                                            title={order.originalData.orderNote}
+                                                        >
+                                                            📝 {order.originalData.orderNote}
+                                                        </div>
+                                                    )}
                                                 </div>
                                             </div>
                                         </td>

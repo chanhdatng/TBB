@@ -1,3 +1,5 @@
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,500;0,600;0,700;0,800;0,900;1,400&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Great+Vibes&display=swap');
 @import "tailwindcss";
 
 @theme {
@@ -7,6 +9,8 @@
   --color-secondary: #F8F9FA;
   --color-accent: #D1E7DD;
   --font-sans: 'Inter', sans-serif;
+  --font-serif: 'Playfair Display', serif;
+  --font-script: 'Great Vibes', cursive;
   
   --animate-shake: shake 0.5s cubic-bezier(.36,.07,.19,.97) both;
 

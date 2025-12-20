@@ -376,15 +376,15 @@ export const analyzeProductAffinityBySegment = (customers, orders) => {
   });
 
   // Get top products per segment
-  const result = {};
+  const bySegment = {};
   Object.entries(segmentProducts).forEach(([segment, products]) => {
-    result[segment] = Object.entries(products)
+    bySegment[segment] = Object.entries(products)
       .sort((a, b) => b[1] - a[1])
       .slice(0, 5)
-      .map(([name, count]) => ({ name, count }));
+      .map(([name, count]) => ({ name, quantity: count }));
   });
 
-  return result;
+  return { bySegment };
 };
 
 // ========== BEHAVIORAL PATTERNS ==========

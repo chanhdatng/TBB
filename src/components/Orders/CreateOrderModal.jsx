@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Plus, Trash2, AlertCircle, User, ShoppingBag, Receipt, MapPin, Phone, Save, Globe, Loader2 } from 'lucide-react';
+import { X, Plus, Trash2, AlertCircle, User, ShoppingBag, Receipt, MapPin, Phone, Save, Globe, Loader2, ChevronDown } from 'lucide-react';
 import { useData } from '../../contexts/DataContext';
 import { scaleVariants, backdropVariants, shakeVariants } from '../../utils/animations';
 
@@ -15,13 +15,21 @@ const CreateOrderModal = ({ isOpen, onClose, onCreateOrder, editingOrder, onUpda
     // Form State
     const initialCustomer = { name: '', phone: '', address: '', socialLink: '' };
     const initialItems = [{ id: Date.now(), name: '', quantity: 1, price: 0 }];
-    const initialFees = { ship: 0, discount: 0, other: 0, note: '' };
+    const initialFees = { ship: 0, discount: 0, other: 0 };
 
     const [customer, setCustomer] = useState(initialCustomer);
     const [items, setItems] = useState(initialItems);
     const [fees, setFees] = useState(initialFees);
+    const [orderNote, setOrderNote] = useState('');
     const [showConfirm, setShowConfirm] = useState(false);
     const [activeSearchId, setActiveSearchId] = useState(null);
+
+    // Customer suggestions states
+    const [customerNameSuggestions, setCustomerNameSuggestions] = useState([]);
+    const [customerPhoneSuggestions, setCustomerPhoneSuggestions] = useState([]);
+    const [showCustomerSuggestions, setShowCustomerSuggestions] = useState({ name: false, phone: false });
+    const [selectedCustomerId, setSelectedCustomerId] = useState(null);
+    const [showAddressList, setShowAddressList] = useState(false);
 
     // Date & Time State
     const [orderDate, setOrderDate] = useState(new Date().toLocaleDateString('en-CA'));
@@ -40,6 +48,70 @@ const CreateOrderModal = ({ isOpen, onClose, onCreateOrder, editingOrder, onUpda
     const [isShake, setIsShake] = useState(false);
     const [showValidation, setShowValidation] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
+
+    // Function to auto-select time slot based on current time
+    const getAutoSelectedTimeSlot = () => {
+        const now = new Date();
+        const currentHour = now.getHours();
+        const currentMinute = now.getMinutes();
+        const currentTimeInMinutes = currentHour * 60 + currentMinute;
+
+        // Define time slots in minutes from start of day
+        const slots = [
+            { name: "10:00 - 12:00", start: 10 * 60, end: 12 * 60 },
+            { name: "12:00 - 14:00", start: 12 * 60, end: 14 * 60 },
+            { name: "14:00 - 16:00", start: 14 * 60, end: 16 * 60 },
+            { name: "16:00 - 18:00", start: 16 * 60, end: 18 * 60 },
+            { name: "18:00 - 20:00", start: 18 * 60, end: 20 * 60 }
+        ];
+
+        // Find the most suitable slot
+        for (const slot of slots) {
+            if (currentTimeInMinutes >= slot.start && currentTimeInMinutes < slot.end) {
+                return slot.name;
+            }
+        }
+
+        // If current time is before all slots, return the first slot
+        if (currentTimeInMinutes < slots[0].start) {
+            return slots[0].name;
+        }
+
+        // If current time is after all slots, return the last slot
+        if (currentTimeInMinutes >= slots[slots.length - 1].end) {
+            return slots[slots.length - 1].name;
+        }
+
+        // Otherwise, find the next available slot
+        for (const slot of slots) {
+            if (currentTimeInMinutes < slot.start) {
+                return slot.name;
+            }
+        }
+
+        return slots[0].name; // fallback
+    };
+
+    // Effect to close address list when customer changes
+    useEffect(() => {
+        setShowAddressList(false);
+    }, [customer.id]);
+
+    // Effect to close dropdown when clicking outside
+    useEffect(() => {
+        const handleClickOutside = (event) => {
+            // Close address dropdown if clicking outside
+            const addressContainer = event.target.closest('.address-dropdown-container');
+            if (!addressContainer && showAddressList) {
+                setShowAddressList(false);
+            }
+        };
+
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => {
+            document.removeEventListener('mousedown', handleClickOutside);
+        };
+    }, [showAddressList]);
 
     // Reset form when modal opens
     useEffect(() => {
@@ -77,9 +149,11 @@ const CreateOrderModal = ({ isOpen, onClose, onCreateOrder, editingOrder, onUpda
                         const subtotal = mappedItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
                         return subtotal > 0 ? (d / subtotal) * 100 : 0;
                     })(),
-                    other: editingOrder.originalData?.otherFee || 0,
-                    note: editingOrder.originalData?.note || ''
+                    other: editingOrder.originalData?.otherFee || 0
                 });
+
+                // Set order note
+                setOrderNote(editingOrder.originalData?.orderNote || '');
 
                 // Map Date & Time
                 // editingOrder.timeline.received.raw is a Date object
@@ -106,13 +180,71 @@ const CreateOrderModal = ({ isOpen, onClose, onCreateOrder, editingOrder, onUpda
                 setCustomer(initialCustomer);
                 setItems([{ id: Date.now(), name: '', quantity: 1, price: 0 }]);
                 setFees(initialFees);
+                setOrderNote('');
                 setOrderDate(new Date().toLocaleDateString('en-CA'));
                 setOrderTime(new Date().toTimeString().slice(0, 5));
-                setDeliveryTimeSlot('');
+                // Auto-select time slot based on current time
+                setDeliveryTimeSlot(getAutoSelectedTimeSlot());
             }
             setShowConfirm(false);
         }
     }, [isOpen, editingOrder, initialData]);
+
+    // Function to handle customer name search
+    const handleCustomerNameChange = (value) => {
+        setCustomer({ ...customer, name: value });
+
+        if (value.trim() === '') {
+            setCustomerNameSuggestions([]);
+            setShowCustomerSuggestions({ ...showCustomerSuggestions, name: false });
+            return;
+        }
+
+        const searchLower = value.toLowerCase();
+        const suggestions = customers.filter(c =>
+            c && c.name && c.name.toLowerCase().includes(searchLower)
+        ).slice(0, 5); // Limit to 5 suggestions
+
+        setCustomerNameSuggestions(suggestions);
+        setShowCustomerSuggestions({ ...showCustomerSuggestions, name: suggestions.length > 0 });
+    };
+
+    // Function to handle customer phone search
+    const handleCustomerPhoneChange = (value) => {
+        setCustomer({ ...customer, phone: value });
+
+        if (value.trim() === '') {
+            setCustomerPhoneSuggestions([]);
+            setShowCustomerSuggestions({ ...showCustomerSuggestions, phone: false });
+            return;
+        }
+
+        const normalize = (p) => p ? String(p).replace(/\D/g, '') : '';
+        const normalizedNewPhone = normalize(value);
+
+        const suggestions = customers.filter(c =>
+            c && c.phone && normalize(c.phone).includes(normalizedNewPhone)
+        ).slice(0, 5); // Limit to 5 suggestions
+
+        setCustomerPhoneSuggestions(suggestions);
+        setShowCustomerSuggestions({ ...showCustomerSuggestions, phone: suggestions.length > 0 });
+    };
+
+    // Function to select a customer from suggestions
+    const selectCustomer = (customerData) => {
+        setCustomer({
+            name: customerData.name,
+            phone: customerData.phone,
+            address: customerData.address,
+            socialLink: customerData.socialLink || '',
+            id: customerData.id
+        });
+        setSelectedCustomerId(customerData.id);
+        setShowAddressList(false); // Close address list when selecting new customer
+        setShowCustomerSuggestions({ name: false, phone: false });
+        setCustomerNameSuggestions([]);
+        setCustomerPhoneSuggestions([]);
+    };
 
     const handleSaveDraft = () => {
         const draftData = {
@@ -212,7 +344,7 @@ const CreateOrderModal = ({ isOpen, onClose, onCreateOrder, editingOrder, onUpda
             if (Number(fees.ship) !== (editingOrder.originalData?.shipFee || 0)) return true;
             if (Number(fees.discount) !== (editingOrder.originalData?.discount || 0)) return true;
             if (Number(fees.other) !== (editingOrder.originalData?.otherFee || 0)) return true;
-            if (fees.note !== (editingOrder.originalData?.note || '')) return true;
+            if (orderNote !== (editingOrder.originalData?.orderNote || '')) return true;
 
             // Check Date/Time
             // This is a bit tricky due to format conversions, let's skip strict date check for now to avoid false positives
@@ -235,7 +367,7 @@ const CreateOrderModal = ({ isOpen, onClose, onCreateOrder, editingOrder, onUpda
         }
 
         // Fees
-        if (Number(fees.ship) !== 0 || Number(fees.discount) !== 0 || Number(fees.other) !== 0 || fees.note.trim() !== '') return true;
+        if (Number(fees.ship) !== 0 || Number(fees.discount) !== 0 || Number(fees.other) !== 0 || orderNote.trim() !== '') return true;
 
         // Time Slot
         if (deliveryTimeSlot !== '') return true;
@@ -343,6 +475,7 @@ const CreateOrderModal = ({ isOpen, onClose, onCreateOrder, editingOrder, onUpda
             orderDate: toCFAbsoluteTime(selectedDateTime), // Use selected date/time
             deliveryTimeSlot: deliveryTimeSlot, // Save the slot string
             otherFee: Number(fees.other),
+            orderNote: orderNote, // Order-specific note
             payMethod: "Bank", // Default value
             shipFee: Number(fees.ship),
             social: "Instagram", // Default value
@@ -461,18 +594,34 @@ const CreateOrderModal = ({ isOpen, onClose, onCreateOrder, editingOrder, onUpda
                                 <h3>Customer Details</h3>
                             </div>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                <div>
+                                <div className="relative">
                                     <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
                                     <input
                                         type="text"
                                         required
                                         value={customer.name}
-                                        onChange={(e) => setCustomer({ ...customer, name: e.target.value })}
+                                        onChange={(e) => handleCustomerNameChange(e.target.value)}
+                                        onFocus={() => customer.name.trim() !== '' && setShowCustomerSuggestions({ ...showCustomerSuggestions, name: true })}
+                                        onBlur={() => setTimeout(() => setShowCustomerSuggestions({ ...showCustomerSuggestions, name: false }), 200)}
                                         className="w-full px-4 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20"
                                         placeholder="Customer Name"
                                     />
+                                    {showCustomerSuggestions.name && customerNameSuggestions.length > 0 && (
+                                        <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                                            {customerNameSuggestions.map(c => (
+                                                <div
+                                                    key={c.id}
+                                                    className="px-3 py-2 hover:bg-gray-50 cursor-pointer text-sm"
+                                                    onMouseDown={() => selectCustomer(c)}
+                                                >
+                                                    <div className="font-medium text-gray-900">{c.name}</div>
+                                                    <div className="text-xs text-gray-500">{c.phone}</div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
                                 </div>
-                                <div>
+                                <div className="relative">
                                     <label className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
                                     <div className="relative">
                                         <Phone size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
@@ -480,28 +629,29 @@ const CreateOrderModal = ({ isOpen, onClose, onCreateOrder, editingOrder, onUpda
                                             type="tel"
                                             required
                                             value={customer.phone}
-                                            onChange={(e) => {
-                                                const newPhone = e.target.value;
-                                                const normalize = (p) => p ? String(p).replace(/\D/g, '') : '';
-                                                const normalizedNewPhone = normalize(newPhone);
-                                                
-                                                const foundCustomer = customers.find(c => normalize(c.phone) === normalizedNewPhone);
-                                                
-                                                setCustomer({
-                                                    ...customer,
-                                                    phone: newPhone,
-                                                    name: foundCustomer ? foundCustomer.name : customer.name,
-                                                    address: foundCustomer ? foundCustomer.address : customer.address,
-                                                    socialLink: foundCustomer ? (foundCustomer.socialLink || '') : customer.socialLink,
-                                                    id: foundCustomer ? foundCustomer.id : null
-                                                });
-                                            }}
+                                            onChange={(e) => handleCustomerPhoneChange(e.target.value)}
+                                            onFocus={() => customer.phone.trim() !== '' && setShowCustomerSuggestions({ ...showCustomerSuggestions, phone: true })}
+                                            onBlur={() => setTimeout(() => setShowCustomerSuggestions({ ...showCustomerSuggestions, phone: false }), 200)}
                                             className="w-full pl-10 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20"
                                             placeholder="Phone Number"
                                         />
                                     </div>
+                                    {showCustomerSuggestions.phone && customerPhoneSuggestions.length > 0 && (
+                                        <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                                            {customerPhoneSuggestions.map(c => (
+                                                <div
+                                                    key={c.id}
+                                                    className="px-3 py-2 hover:bg-gray-50 cursor-pointer text-sm"
+                                                    onMouseDown={() => selectCustomer(c)}
+                                                >
+                                                    <div className="font-medium text-gray-900">{c.phone}</div>
+                                                    <div className="text-xs text-gray-500">{c.name}</div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
                                 </div>
-                                <div>
+                                <div className="relative address-dropdown-container">
                                     <label className="block text-sm font-medium text-gray-700 mb-1">Address</label>
                                     <div className="relative">
                                         <MapPin size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
@@ -510,10 +660,54 @@ const CreateOrderModal = ({ isOpen, onClose, onCreateOrder, editingOrder, onUpda
                                             required
                                             value={customer.address}
                                             onChange={(e) => setCustomer({ ...customer, address: e.target.value })}
-                                            className="w-full pl-10 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20"
+                                            className={`w-full pl-10 pr-10 py-2 bg-gray-50 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 ${customer.id ? 'border-gray-200' : 'border-gray-200'}`}
                                             placeholder="Delivery Address"
                                         />
+                                        {customer.id && (
+                                            <button
+                                                type="button"
+                                                onClick={() => setShowAddressList(!showAddressList)}
+                                                className={`absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded transition-all ${showAddressList ? 'bg-primary text-white' : 'text-gray-400 hover:text-primary hover:bg-primary/10'}`}
+                                            >
+                                                <ChevronDown size={16} className={`transition-transform ${showAddressList ? 'rotate-180' : ''}`} />
+                                            </button>
+                                        )}
                                     </div>
+                                    {customer.id && showAddressList && (
+                                        <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg">
+                                            <div className="p-3 border-b border-gray-100">
+                                                <div className="text-xs font-medium text-gray-500 uppercase tracking-wider">Địa chỉ đã lưu</div>
+                                            </div>
+                                            <div className="max-h-40 overflow-y-auto">
+                                                {(() => {
+                                                    const customerData = customers.find(c => c.id === customer.id);
+                                                    if (customerData && customerData.addresses && customerData.addresses.length > 0) {
+                                                        return customerData.addresses.map((address, index) => (
+                                                            <div
+                                                                key={index}
+                                                                onClick={() => {
+                                                                    setCustomer({ ...customer, address: address });
+                                                                    setShowAddressList(false);
+                                                                }}
+                                                                className="px-3 py-2 hover:bg-gray-50 cursor-pointer text-sm border-b border-gray-50 last:border-b-0"
+                                                            >
+                                                                <div className="flex items-start gap-2">
+                                                                    <MapPin size={14} className="text-gray-400 mt-0.5 flex-shrink-0" />
+                                                                    <span className="text-gray-700">{address}</span>
+                                                                </div>
+                                                            </div>
+                                                        ));
+                                                    } else {
+                                                        return (
+                                                            <div className="px-3 py-4 text-sm text-gray-500 text-center">
+                                                                Chưa có địa chỉ nào được lưu
+                                                            </div>
+                                                        );
+                                                    }
+                                                })()}
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 mb-1">Social Link <span className="text-gray-400 font-normal">(Optional)</span></label>
@@ -708,13 +902,13 @@ const CreateOrderModal = ({ isOpen, onClose, onCreateOrder, editingOrder, onUpda
                                     </div>
 
                                     <div>
-                                        <label className="block text-sm font-medium text-gray-700 mb-1">Note</label>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">Note <span className="text-gray-400 font-normal">(Optional)</span></label>
                                         <textarea
                                             rows="2"
-                                            value={fees.note}
-                                            onChange={(e) => setFees({ ...fees, note: e.target.value })}
+                                            value={orderNote}
+                                            onChange={(e) => setOrderNote(e.target.value)}
                                             className="w-full px-4 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 resize-none"
-                                            placeholder="Order notes..."
+                                            placeholder="Ghi chú cho đơn hàng..."
                                         />
                                     </div>
                                 </div>

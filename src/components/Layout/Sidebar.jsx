@@ -1,12 +1,13 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, ShoppingBag, Users, BarChart3, Settings, LogOut, X, Package, ClipboardList, Database } from 'lucide-react';
+import { LayoutDashboard, ShoppingBag, Users, BarChart3, Settings, LogOut, X, Package, ClipboardList, Database, UserCheck } from 'lucide-react';
 import { useData } from '../../contexts/DataContext';
 import { useAuth } from '../../contexts/AuthContext';
 
 const Sidebar = ({ isOpen, onClose }) => {
     const { orders } = useData();
-    const { logout } = useAuth();
+    const { logout, hasMinimumRole, user } = useAuth();
+    const isStaff = user?.role === 'staff';
 
     // Calculate pending orders for today
     const pendingOrdersCount = orders.filter(order => {
@@ -19,15 +20,25 @@ const Sidebar = ({ isOpen, onClose }) => {
     }).length;
 
     const menuItems = [
-        { icon: LayoutDashboard, label: 'Dashboard', path: '/' },
-        { icon: ShoppingBag, label: 'Orders', path: '/orders', badge: pendingOrdersCount > 0 ? pendingOrdersCount.toString() : null },
-        { icon: ClipboardList, label: 'Pre-Orders', path: '/pre-orders', badge: '4' },
-        { icon: Package, label: 'Products', path: '/products' },
-        { icon: Users, label: 'Customers', path: '/customers' },
-        { icon: Database, label: 'Data Sync', path: '/data-sync' },
-        { icon: BarChart3, label: 'Analytics', path: '/analytics' },
-        { icon: Settings, label: 'Settings', path: '/settings' },
+        ...(!isStaff ? [{ icon: LayoutDashboard, label: 'Dashboard', path: '/admin' }] : []),
+        { icon: ShoppingBag, label: 'Orders', path: '/admin/orders', badge: pendingOrdersCount > 0 ? pendingOrdersCount.toString() : null },
+        ...(!isStaff ? [
+            { icon: ClipboardList, label: 'Pre-Orders', path: '/admin/pre-orders', badge: '4' },
+            { icon: Package, label: 'Products', path: '/admin/products' },
+            { icon: Users, label: 'Customers', path: '/admin/customers' },
+            ...(hasMinimumRole('manager') ? [
+                { icon: UserCheck, label: 'Employees', path: '/admin/employees' }
+            ] : []),
+            { icon: Database, label: 'Data Sync', path: '/admin/data-sync' },
+            { icon: BarChart3, label: 'Analytics', path: '/admin/analytics' },
+            // Settings removed from this list if it was here, but in original it was at line 32. 
+            // Wait, I should verify what I replace. 
+            // Original line 32: { icon: Settings, label: 'Settings', path: '/admin/settings' },
+            // I will exclude it here if isStaff.
+            { icon: Settings, label: 'Settings', path: '/admin/settings' },
+        ] : []),
     ];
+
 
     return (
         <>
@@ -64,6 +75,7 @@ const Sidebar = ({ isOpen, onClose }) => {
                                 <NavLink
                                     key={index}
                                     to={item.path}
+                                    end={item.path === '/admin'}
                                     className={({ isActive }) => `
                     flex items-center justify-between px-4 py-3 rounded-xl transition-colors
                     ${isActive
@@ -93,18 +105,20 @@ const Sidebar = ({ isOpen, onClose }) => {
 
                         <div>
                             <p className="px-2 text-xs font-semibold text-gray-400 uppercase tracking-wider mb-4">General</p>
-                            <NavLink
-                                to="/settings"
-                                className={({ isActive }) => `
+                            {!isStaff && (
+                                <NavLink
+                                    to="/admin/settings"
+                                    className={({ isActive }) => `
                   flex items-center gap-3 px-4 py-3 rounded-xl transition-colors
                   ${isActive
-                                        ? 'bg-primary text-white shadow-lg shadow-primary/30'
-                                        : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'}
+                                            ? 'bg-primary text-white shadow-lg shadow-primary/30'
+                                            : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'}
                 `}
-                            >
-                                <Settings size={20} />
-                                <span className="font-medium">Settings</span>
-                            </NavLink>
+                                >
+                                    <Settings size={20} />
+                                    <span className="font-medium">Settings</span>
+                                </NavLink>
+                            )}
                             <button onClick={logout} className="w-full flex items-center gap-3 px-4 py-3 text-red-600 hover:bg-red-50 rounded-xl transition-colors">
                                 <LogOut size={20} />
                                 <span className="font-medium">Log out</span>

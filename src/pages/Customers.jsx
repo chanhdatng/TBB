@@ -1,21 +1,71 @@
-import React, { useState, useMemo } from 'react';
-import { Search, Mail, Phone, MoreHorizontal, ChevronLeft, ChevronRight, Filter, ArrowUp, ArrowDown, Calendar, LayoutGrid, List, RotateCcw, Award, Gem, Star, Sparkles, AlertTriangle, Moon, AlertCircle, HeartCrack, Snowflake, UserX, UserPlus, HelpCircle, Users, TrendingUp, DollarSign, ShoppingBag, MapPin } from 'lucide-react';
+import React, { useState, useMemo, useEffect, lazy, Suspense } from 'react';
+import { Search, Mail, Phone, MoreHorizontal, ChevronLeft, ChevronRight, Filter, ArrowUp, ArrowDown, Calendar, LayoutGrid, List, RotateCcw, Award, Gem, Star, Sparkles, AlertTriangle, Moon, AlertCircle, HeartCrack, Snowflake, UserX, UserPlus, HelpCircle, Users, TrendingUp, DollarSign, ShoppingBag, ShoppingCart, MapPin, BarChart3, Package } from 'lucide-react';
 import * as LucideIcons from 'lucide-react';
 import { useData } from '../contexts/DataContext';
 import CustomerDetailsModal from '../components/Customers/CustomerDetailsModal';
+// Lazy load heavy analytics components for better initial load performance
+const CohortAnalysisView = lazy(() => import('../components/Customers/CohortAnalysisView'));
+const ProductAffinityView = lazy(() => import('../components/Customers/ProductAffinityView'));
+const GeographicView = lazy(() => import('../components/Customers/GeographicView'));
+import CustomerExport from '../components/Customers/CustomerExport';
 import SkeletonCard from '../components/Common/SkeletonCard';
 import SkeletonTable from '../components/Common/SkeletonTable';
 import { calculateRFMScore, getSegmentColor, getSegmentIcon, getSegmentDescription } from '../utils/rfm';
+import {
+    calculateCLV,
+    getCLVSegment,
+    getCLVSegmentColor,
+    calculateChurnRisk,
+    calculateHealthScore,
+    getLoyaltyStage,
+    getCohortGroup,
+    analyzeBehavioralPatterns,
+    calculateProductAffinity
+} from '../utils/customerMetrics';
+import { parseAddress, getZoneColor } from '../utils/addressParser';
+
+// Custom hook for debouncing search input to reduce re-renders
+const useDebounce = (value, delay) => {
+    const [debouncedValue, setDebouncedValue] = useState(value);
+
+    useEffect(() => {
+        const handler = setTimeout(() => {
+            setDebouncedValue(value);
+        }, delay);
+
+        return () => clearTimeout(handler);
+    }, [value, delay]);
+
+    return debouncedValue;
+};
 
 const Customers = () => {
-    const { customers, orders, loading } = useData();
+    const { customers, orders, loading, customerMetrics, customerMetricsLoading } = useData();
     const [searchTerm, setSearchTerm] = useState('');
+    const debouncedSearch = useDebounce(searchTerm, 300);
     const [currentPage, setCurrentPage] = useState(1);
     const [sortConfig, setSortConfig] = useState({ key: 'lastOrder', direction: 'desc' });
-    const [filters, setFilters] = useState({ minOrders: '', minSpent: '', lastOrderDate: 'all', segment: 'all' });
+
+    // Capture timestamp once on mount to avoid impure Date.now() calls in render
+    const [currentTimestamp] = useState(() => Date.now());
+    const [filters, setFilters] = useState({
+        // Existing
+        minOrders: '',
+        minSpent: '',
+        lastOrderDate: 'all',
+        segment: 'all',
+
+        // NEW filters
+        churnRisk: 'all',
+        clvSegment: 'all',
+        loyaltyStage: 'all',
+        zone: 'all',
+        district: 'all'
+    });
     const [selectedCustomer, setSelectedCustomer] = useState(null);
     const [viewMode, setViewMode] = useState('grid');
     const [itemsPerPage, setItemsPerPage] = useState(10);
+    const [activeTab, setActiveTab] = useState('overview');
 
     // Segment Badge Component
     const SegmentBadge = ({ segment, size = 'sm' }) => {
@@ -37,83 +87,94 @@ const Customers = () => {
         );
     };
 
-    // Enrich customers with order data and RFM analytics
+    // Enrich customers with pre-computed metrics from backend
     const enrichedCustomers = useMemo(() => {
-        if (!customers || !orders) return [];
+        if (!customers) return [];
 
-        // Step 1: Enrich with basic metrics
-        const withBasicMetrics = customers.map(customer => {
-            const customerOrders = orders.filter(order =>
-                order.customer.phone === customer.phone
-            );
-
-            const totalOrders = customerOrders.length;
-            const totalSpent = customerOrders.reduce((sum, order) => sum + (Number(order.rawPrice) || 0), 0);
-
-            // Find last order date
-            let lastOrderDate = '-';
-            let rawLastOrder = 0;
-            if (customerOrders.length > 0) {
-                // Sort by date descending
-                const sortedOrders = [...customerOrders].sort((a, b) => {
-                    const dateA = a.timeline?.received?.raw || new Date(0);
-                    const dateB = b.timeline?.received?.raw || new Date(0);
-                    return dateB - dateA;
-                });
-                lastOrderDate = sortedOrders[0]?.timeline?.received?.date || '-';
-                rawLastOrder = sortedOrders[0]?.timeline?.received?.raw || 0;
-            }
-
-            // Calculate AOV (Average Order Value)
-            const aov = totalOrders > 0 ? totalSpent / totalOrders : 0;
+        return customers.map(customer => {
+            const metrics = customerMetrics[customer.phone] || {};
 
             return {
+                // Customer info from newCustomers
                 ...customer,
-                orders: totalOrders,
-                totalSpent: totalSpent,
-                lastOrder: lastOrderDate,
-                rawLastOrder: rawLastOrder,
-                aov: aov
+
+                // Pre-computed metrics from customerMetrics
+                orders: metrics.totalOrders || 0,
+                totalOrders: metrics.totalOrders || 0,
+                totalSpent: metrics.totalSpent || 0,
+                lastOrder: metrics.lastOrderTimestamp
+                    ? new Date(metrics.lastOrderTimestamp).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
+                    : '-',
+                rawLastOrder: metrics.lastOrderTimestamp || 0,
+                aov: metrics.aov || 0,
+                rfm: metrics.rfm || {},
+                clv: metrics.clv || 0,
+                clvSegment: metrics.clvSegment || 'Medium',
+                churnRisk: metrics.churnRisk || { level: 'low', score: 0 },
+                healthScore: metrics.healthScore || 0,
+                loyaltyStage: metrics.loyaltyStage || {},
+                location: metrics.location || {},
+                trend: metrics.trend || 0,
+                cohort: metrics.cohort || '',
+                behavior: metrics.behavior || {},
+                productAffinity: metrics.productAffinity || []
             };
         });
+    }, [customers, customerMetrics]);
 
-        // Step 2: Calculate RFM scores for all customers
-        const withRFM = withBasicMetrics.map(customer => ({
-            ...customer,
-            rfm: calculateRFMScore(customer, withBasicMetrics)
-        }));
-
-        return withRFM;
-    }, [customers, orders]);
 
     // Calculate summary statistics
     const summaryStats = useMemo(() => {
         const totalCustomers = enrichedCustomers.length;
         const totalRevenue = enrichedCustomers.reduce((sum, c) => sum + (c.totalSpent || 0), 0);
-        const avgOrderValue = totalCustomers > 0 ? enrichedCustomers.reduce((sum, c) => sum + (c.aov || 0), 0) / totalCustomers : 0;
         const totalOrders = enrichedCustomers.reduce((sum, c) => sum + (c.orders || 0), 0);
 
-        // Calculate active customers (ordered in last 90 days)
-        const cutoffDate = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
+        // Active customers (90 days)
+        const cutoffDate = new Date(currentTimestamp - 90 * 24 * 60 * 60 * 1000);
         const activeCustomers = enrichedCustomers.filter(c =>
             c.rawLastOrder && new Date(c.rawLastOrder) >= cutoffDate
         ).length;
 
+        // Average CLV
+        const avgCLV = totalCustomers > 0
+            ? enrichedCustomers.reduce((sum, c) => sum + (c.clv || 0), 0) / totalCustomers
+            : 0;
+
+        // Repurchase Rate
+        const customersWithOrders = enrichedCustomers.filter(c => (c.orders || 0) >= 1).length;
+        const customersWithRepurchase = enrichedCustomers.filter(c => (c.orders || 0) >= 2).length;
+        const repurchaseRate = customersWithOrders > 0
+            ? (customersWithRepurchase / customersWithOrders) * 100
+            : 0;
+
+        // High Churn Risk Count
+        const highChurnRiskCount = enrichedCustomers.filter(c =>
+            c.churnRisk?.level === 'high'
+        ).length;
+
+        // Average Health Score
+        const avgHealthScore = totalCustomers > 0
+            ? enrichedCustomers.reduce((sum, c) => sum + (c.healthScore || 0), 0) / totalCustomers
+            : 0;
+
         return {
             totalCustomers,
             totalRevenue,
-            avgOrderValue,
             totalOrders,
             activeCustomers,
-            activeRate: totalCustomers > 0 ? (activeCustomers / totalCustomers) * 100 : 0
+            activeRate: totalCustomers > 0 ? (activeCustomers / totalCustomers) * 100 : 0,
+            avgCLV,
+            repurchaseRate,
+            highChurnRiskCount,
+            avgHealthScore
         };
-    }, [enrichedCustomers]);
+    }, [enrichedCustomers, currentTimestamp]);
 
     const filteredCustomers = useMemo(() => {
         let result = enrichedCustomers.filter(customer =>
-            (customer.name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-            (customer.phone || '').includes(searchTerm) ||
-            (customer.email || '').toLowerCase().includes(searchTerm.toLowerCase())
+            (customer.name || '').toLowerCase().includes(debouncedSearch.toLowerCase()) ||
+            (customer.phone || '').includes(debouncedSearch) ||
+            (customer.email || '').toLowerCase().includes(debouncedSearch.toLowerCase())
         );
 
         // Apply Filters
@@ -129,7 +190,7 @@ const Customers = () => {
                          filters.lastOrderDate === 'year' ? 365 : 0;
 
             if (days > 0) {
-                const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+                const cutoff = new Date(currentTimestamp - days * 24 * 60 * 60 * 1000);
                 result = result.filter(c => {
                     if (!c.rawLastOrder) return false;
                     return new Date(c.rawLastOrder) >= cutoff;
@@ -138,6 +199,33 @@ const Customers = () => {
         }
         if (filters.segment !== 'all') {
             result = result.filter(c => c.rfm?.segment === filters.segment);
+        }
+
+        // ===== NEW FILTERS =====
+
+        // Churn Risk
+        if (filters.churnRisk !== 'all') {
+            result = result.filter(c => c.churnRisk?.level === filters.churnRisk);
+        }
+
+        // CLV Segment
+        if (filters.clvSegment !== 'all') {
+            result = result.filter(c => c.clvSegment === filters.clvSegment);
+        }
+
+        // Loyalty Stage
+        if (filters.loyaltyStage !== 'all') {
+            result = result.filter(c => c.loyaltyStage?.stage === filters.loyaltyStage);
+        }
+
+        // Zone
+        if (filters.zone !== 'all') {
+            result = result.filter(c => c.location?.zone === filters.zone);
+        }
+
+        // District
+        if (filters.district !== 'all') {
+            result = result.filter(c => c.location?.district === filters.district);
         }
 
         // Apply Sorting
@@ -156,6 +244,19 @@ const Customers = () => {
                 case 'name':
                     comparison = (a.name || '').localeCompare(b.name || '');
                     break;
+
+                // NEW SORT OPTIONS
+                case 'clv':
+                    comparison = (a.clv || 0) - (b.clv || 0);
+                    break;
+                case 'healthScore':
+                    comparison = (a.healthScore || 0) - (b.healthScore || 0);
+                    break;
+                case 'churnRisk':
+                    // Higher risk = higher score = show first
+                    comparison = (a.churnRisk?.score || 0) - (b.churnRisk?.score || 0);
+                    break;
+
                 default:
                     comparison = 0;
             }
@@ -163,21 +264,18 @@ const Customers = () => {
         });
 
         return result;
-    }, [enrichedCustomers, searchTerm, filters, sortConfig]);
+    }, [enrichedCustomers, debouncedSearch, filters, sortConfig, currentTimestamp]);
 
     // Pagination Logic
     const totalPages = Math.ceil(filteredCustomers.length / itemsPerPage);
+    // Auto-adjust currentPage if it exceeds totalPages
+    const safePage = Math.min(currentPage, Math.max(1, totalPages));
     const currentCustomers = filteredCustomers.slice(
-        (currentPage - 1) * itemsPerPage,
-        currentPage * itemsPerPage
+        (safePage - 1) * itemsPerPage,
+        safePage * itemsPerPage
     );
 
-    // Reset to page 1 when search or itemsPerPage changes
-    useMemo(() => {
-        setCurrentPage(1);
-    }, [searchTerm, itemsPerPage]);
-
-    if (loading) {
+    if (loading || customerMetricsLoading) {
         return (
             <div className="flex items-center justify-center h-96">
                 <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
@@ -195,35 +293,38 @@ const Customers = () => {
             </div>
 
             {/* Summary Statistics Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
+                {/* Card 1: Total Customers */}
                 <div className="bg-gradient-to-br from-blue-50 to-blue-100/50 p-6 rounded-xl border border-blue-200 shadow-sm">
                     <div className="flex items-center justify-between mb-4">
                         <div className="p-3 bg-blue-500 rounded-lg shadow-md">
                             <Users size={24} className="text-white" />
                         </div>
                         <div className="text-right">
-                            <p className="text-sm font-medium text-blue-700">Active Rate</p>
+                            <p className="text-sm font-medium text-blue-700">Tỷ lệ hoạt động</p>
                             <p className="text-lg font-bold text-blue-900">{summaryStats.activeRate.toFixed(0)}%</p>
                         </div>
                     </div>
                     <h3 className="text-3xl font-bold text-blue-900 mb-1">{summaryStats.totalCustomers}</h3>
-                    <p className="text-sm text-blue-700 font-medium">Total Customers</p>
-                    <p className="text-xs text-blue-600 mt-2">{summaryStats.activeCustomers} active in last 90 days</p>
+                    <p className="text-sm text-blue-700 font-medium">Tổng khách hàng</p>
+                    <p className="text-xs text-blue-600 mt-2">{summaryStats.activeCustomers} hoạt động trong 90 ngày</p>
                 </div>
 
+                {/* Card 2: Total Orders */}
                 <div className="bg-gradient-to-br from-green-50 to-green-100/50 p-6 rounded-xl border border-green-200 shadow-sm">
                     <div className="flex items-center justify-between mb-4">
                         <div className="p-3 bg-green-500 rounded-lg shadow-md">
-                            <DollarSign size={24} className="text-white" />
+                            <ShoppingCart size={24} className="text-white" />
                         </div>
                     </div>
                     <h3 className="text-3xl font-bold text-green-900 mb-1">
-                        {new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND', notation: 'compact' }).format(summaryStats.totalRevenue)}
+                        {new Intl.NumberFormat('vi-VN').format(summaryStats.totalOrders)}
                     </h3>
-                    <p className="text-sm text-green-700 font-medium">Total Revenue</p>
-                    <p className="text-xs text-green-600 mt-2">From all customer purchases</p>
+                    <p className="text-sm text-green-700 font-medium">Tổng đơn hàng</p>
+                    <p className="text-xs text-green-600 mt-2">Từ tất cả khách hàng</p>
                 </div>
 
+                {/* Card 3: Average CLV (NEW) */}
                 <div className="bg-gradient-to-br from-purple-50 to-purple-100/50 p-6 rounded-xl border border-purple-200 shadow-sm">
                     <div className="flex items-center justify-between mb-4">
                         <div className="p-3 bg-purple-500 rounded-lg shadow-md">
@@ -231,107 +332,177 @@ const Customers = () => {
                         </div>
                     </div>
                     <h3 className="text-3xl font-bold text-purple-900 mb-1">
-                        {new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND', notation: 'compact' }).format(summaryStats.avgOrderValue)}
+                        {new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND', notation: 'compact' }).format(summaryStats.avgCLV)}
                     </h3>
-                    <p className="text-sm text-purple-700 font-medium">Average Order Value</p>
-                    <p className="text-xs text-purple-600 mt-2">Across all customers</p>
+                    <p className="text-sm text-purple-700 font-medium">CLV Trung bình</p>
+                    <p className="text-xs text-purple-600 mt-2">Giá trị trọn đời khách hàng</p>
                 </div>
 
-                <div className="bg-gradient-to-br from-orange-50 to-orange-100/50 p-6 rounded-xl border border-orange-200 shadow-sm">
+                {/* Card 4: Repurchase Rate (NEW) */}
+                <div className="bg-gradient-to-br from-cyan-50 to-cyan-100/50 p-6 rounded-xl border border-cyan-200 shadow-sm">
                     <div className="flex items-center justify-between mb-4">
-                        <div className="p-3 bg-orange-500 rounded-lg shadow-md">
+                        <div className="p-3 bg-cyan-500 rounded-lg shadow-md">
                             <ShoppingBag size={24} className="text-white" />
                         </div>
                     </div>
-                    <h3 className="text-3xl font-bold text-orange-900 mb-1">{summaryStats.totalOrders}</h3>
-                    <p className="text-sm text-orange-700 font-medium">Total Orders</p>
-                    <p className="text-xs text-orange-600 mt-2">
-                        Avg {summaryStats.totalCustomers > 0 ? (summaryStats.totalOrders / summaryStats.totalCustomers).toFixed(1) : 0} orders/customer
-                    </p>
+                    <h3 className="text-3xl font-bold text-cyan-900 mb-1">{summaryStats.repurchaseRate.toFixed(1)}%</h3>
+                    <p className="text-sm text-cyan-700 font-medium">Tỷ lệ mua lại</p>
+                    <p className="text-xs text-cyan-600 mt-2">Khách hàng có 2+ đơn hàng</p>
+                </div>
+
+                {/* Card 5: High Churn Risk (NEW) */}
+                <div className="bg-gradient-to-br from-red-50 to-red-100/50 p-6 rounded-xl border border-red-200 shadow-sm">
+                    <div className="flex items-center justify-between mb-4">
+                        <div className="p-3 bg-red-500 rounded-lg shadow-md">
+                            <AlertCircle size={24} className="text-white" />
+                        </div>
+                    </div>
+                    <h3 className="text-3xl font-bold text-red-900 mb-1">{summaryStats.highChurnRiskCount}</h3>
+                    <p className="text-sm text-red-700 font-medium">Nguy cơ cao</p>
+                    <p className="text-xs text-red-600 mt-2">Khách hàng cần chú ý ngay</p>
+                </div>
+
+                {/* Card 6: Customer Health (NEW) */}
+                <div className="bg-gradient-to-br from-amber-50 to-amber-100/50 p-6 rounded-xl border border-amber-200 shadow-sm">
+                    <div className="flex items-center justify-between mb-4">
+                        <div className="p-3 bg-amber-500 rounded-lg shadow-md">
+                            <Award size={24} className="text-white" />
+                        </div>
+                    </div>
+                    <h3 className="text-3xl font-bold text-amber-900 mb-1">{summaryStats.avgHealthScore.toFixed(0)}</h3>
+                    <p className="text-sm text-amber-700 font-medium">Sức khỏe TB</p>
+                    <p className="text-xs text-amber-600 mt-2">Điểm trung bình 0-100</p>
                 </div>
             </div>
 
-            {/* Persistent Filter Bar */}
+            {/* Tab Navigation */}
+            <div className="bg-white rounded-xl border border-gray-200 shadow-sm mb-6 overflow-hidden">
+                <div className="flex border-b border-gray-200">
+                    <button
+                        onClick={() => setActiveTab('overview')}
+                        className={`flex items-center gap-2 px-6 py-4 font-semibold text-sm transition-all relative ${
+                            activeTab === 'overview'
+                                ? 'text-primary bg-primary/5'
+                                : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                        }`}
+                    >
+                        <Users className="w-5 h-5" />
+                        <span>Tổng quan</span>
+                        {activeTab === 'overview' && (
+                            <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary" />
+                        )}
+                    </button>
+                    <button
+                        onClick={() => setActiveTab('cohort')}
+                        className={`flex items-center gap-2 px-6 py-4 font-semibold text-sm transition-all relative ${
+                            activeTab === 'cohort'
+                                ? 'text-primary bg-primary/5'
+                                : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                        }`}
+                    >
+                        <BarChart3 className="w-5 h-5" />
+                        <span>Phân tích Cohort</span>
+                        {activeTab === 'cohort' && (
+                            <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary" />
+                        )}
+                    </button>
+                    <button
+                        onClick={() => setActiveTab('products')}
+                        className={`flex items-center gap-2 px-6 py-4 font-semibold text-sm transition-all relative ${
+                            activeTab === 'products'
+                                ? 'text-primary bg-primary/5'
+                                : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                        }`}
+                    >
+                        <Package className="w-5 h-5" />
+                        <span>Sản phẩm</span>
+                        {activeTab === 'products' && (
+                            <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary" />
+                        )}
+                    </button>
+                    <button
+                        onClick={() => setActiveTab('geographic')}
+                        className={`flex items-center gap-2 px-6 py-4 font-semibold text-sm transition-all relative ${
+                            activeTab === 'geographic'
+                                ? 'text-primary bg-primary/5'
+                                : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                        }`}
+                    >
+                        <MapPin className="w-5 h-5" />
+                        <span>Địa lý</span>
+                        {activeTab === 'geographic' && (
+                            <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary" />
+                        )}
+                    </button>
+                </div>
+            </div>
+
+            {/* Persistent Filter Bar - Only show on overview tab */}
+            {activeTab === 'overview' && (
             <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm mb-6 space-y-4">
                 {/* Search Row */}
                 <div className="relative">
                     <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
                     <input
                         type="text"
-                        placeholder="Search customers by name, phone, or email..."
+                        placeholder="Tìm kiếm theo tên, SĐT, email..."
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
                         className="w-full pl-11 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/30 text-sm transition-all placeholder:text-gray-400"
                     />
                 </div>
 
-                <div className="flex flex-wrap gap-3 items-end justify-between">
-                    <div className="flex flex-wrap gap-3 items-end">
-                        <div>
-                            <label className="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">Sort By</label>
+                {/* Filters Grid */}
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+                    {/* Row 1: Core Filters */}
+                    <div>
+                        <label className="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">Sắp xếp</label>
                         <div className="flex gap-2">
                             <select
                                 value={sortConfig.key}
                                 onChange={(e) => setSortConfig({ ...sortConfig, key: e.target.value })}
-                                className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/30 transition-all cursor-pointer hover:bg-gray-100"
+                                className="flex-1 px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 transition-all cursor-pointer hover:bg-gray-100"
                             >
-                                <option value="totalSpent">Total Spent</option>
-                                <option value="orders">Total Orders</option>
-                                <option value="lastOrder">Last Order</option>
-                                <option value="name">Name</option>
+                                <option value="totalSpent">Tổng chi tiêu</option>
+                                <option value="orders">Số đơn hàng</option>
+                                <option value="lastOrder">Đơn cuối</option>
+                                <option value="name">Tên</option>
+                                <option value="clv">CLV</option>
+                                <option value="healthScore">Điểm sức khỏe</option>
+                                <option value="churnRisk">Rủi ro cao nhất</option>
                             </select>
                             <button
                                 onClick={() => setSortConfig({ ...sortConfig, direction: sortConfig.direction === 'asc' ? 'desc' : 'asc' })}
                                 className="p-2 bg-gray-50 border border-gray-200 rounded-lg hover:bg-gray-100 transition-colors cursor-pointer"
-                                title={`Sort ${sortConfig.direction === 'asc' ? 'Descending' : 'Ascending'}`}
+                                title={`Sắp xếp ${sortConfig.direction === 'asc' ? 'Giảm dần' : 'Tăng dần'}`}
                             >
                                 {sortConfig.direction === 'asc' ? <ArrowUp size={18} className="text-gray-600" /> : <ArrowDown size={18} className="text-gray-600" />}
                             </button>
                         </div>
                     </div>
+
                     <div>
-                        <label className="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">Last Order</label>
+                        <label className="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">Đơn cuối</label>
                         <select
                             value={filters.lastOrderDate}
                             onChange={(e) => setFilters({ ...filters, lastOrderDate: e.target.value })}
-                            className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/30 transition-all cursor-pointer hover:bg-gray-100"
+                            className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 transition-all cursor-pointer hover:bg-gray-100"
                         >
-                            <option value="all">All Time</option>
-                            <option value="30days">Last 30 Days</option>
-                            <option value="3months">Last 3 Months</option>
-                            <option value="year">Last Year</option>
+                            <option value="all">Tất cả</option>
+                            <option value="30days">30 ngày</option>
+                            <option value="3months">3 tháng</option>
+                            <option value="year">1 năm</option>
                         </select>
                     </div>
+
                     <div>
-                        <label className="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">Min Orders</label>
-                        <input
-                            type="number"
-                            min="0"
-                            value={filters.minOrders}
-                            onChange={(e) => setFilters({ ...filters, minOrders: e.target.value })}
-                            className="w-24 px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/30 transition-all hover:bg-gray-100"
-                            placeholder="0"
-                        />
-                    </div>
-                    <div>
-                        <label className="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">Min Spent</label>
-                        <input
-                            type="number"
-                            min="0"
-                            value={filters.minSpent}
-                            onChange={(e) => setFilters({ ...filters, minSpent: e.target.value })}
-                            className="w-32 px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/30 transition-all hover:bg-gray-100"
-                            placeholder="0"
-                        />
-                    </div>
-                    <div>
-                        <label className="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">Segment</label>
+                        <label className="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">Phân khúc RFM</label>
                         <select
                             value={filters.segment}
                             onChange={(e) => setFilters({ ...filters, segment: e.target.value })}
-                            className="min-w-[140px] px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/30 transition-all cursor-pointer hover:bg-gray-100"
+                            className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 transition-all cursor-pointer hover:bg-gray-100"
                         >
-                            <option value="all">All Segments</option>
+                            <option value="all">Tất cả</option>
                             <option value="Champions">Champions</option>
                             <option value="Loyal">Loyal</option>
                             <option value="Potential Loyalists">Potential Loyalists</option>
@@ -345,23 +516,177 @@ const Customers = () => {
                             <option value="Lost">Lost</option>
                         </select>
                     </div>
-                    <button
-                        onClick={() => {
-                            setFilters({ minOrders: '', minSpent: '', lastOrderDate: 'all', segment: 'all' });
-                            setSortConfig({ key: 'lastOrder', direction: 'desc' });
-                            setSearchTerm('');
-                        }}
-                        className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-50 rounded-lg transition-colors cursor-pointer"
-                        title="Reset All Filters"
-                    >
-                        <RotateCcw size={20} />
-                    </button>
+
+                    {/* NEW: Churn Risk */}
+                    <div>
+                        <label className="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">Rủi ro mất khách</label>
+                        <select
+                            value={filters.churnRisk}
+                            onChange={(e) => setFilters({ ...filters, churnRisk: e.target.value })}
+                            className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 transition-all cursor-pointer hover:bg-gray-100"
+                        >
+                            <option value="all">Tất cả</option>
+                            <option value="high">Cao</option>
+                            <option value="medium">Trung bình</option>
+                            <option value="low">Thấp</option>
+                        </select>
+                    </div>
+
+                    {/* Row 2: Advanced Filters */}
+                    {/* NEW: CLV Segment */}
+                    <div>
+                        <label className="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">Phân khúc CLV</label>
+                        <select
+                            value={filters.clvSegment}
+                            onChange={(e) => setFilters({ ...filters, clvSegment: e.target.value })}
+                            className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 transition-all cursor-pointer hover:bg-gray-100"
+                        >
+                            <option value="all">Tất cả</option>
+                            <option value="VIP">VIP (Top 10%)</option>
+                            <option value="High">High (10-30%)</option>
+                            <option value="Medium">Medium (30-70%)</option>
+                            <option value="Low">Low (70%+)</option>
+                        </select>
+                    </div>
+
+                    {/* NEW: Loyalty Stage */}
+                    <div>
+                        <label className="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">Giai đoạn</label>
+                        <select
+                            value={filters.loyaltyStage}
+                            onChange={(e) => setFilters({ ...filters, loyaltyStage: e.target.value })}
+                            className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 transition-all cursor-pointer hover:bg-gray-100"
+                        >
+                            <option value="all">Tất cả</option>
+                            <option value="champion">Champion</option>
+                            <option value="loyal">Trung thành</option>
+                            <option value="growing">Phát triển</option>
+                            <option value="new">Mới</option>
+                            <option value="at_risk">Nguy cơ</option>
+                            <option value="lost">Đã mất</option>
+                        </select>
+                    </div>
+
+                    {/* NEW: Zone */}
+                    <div>
+                        <label className="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">Khu vực</label>
+                        <select
+                            value={filters.zone}
+                            onChange={(e) => setFilters({ ...filters, zone: e.target.value })}
+                            className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 transition-all cursor-pointer hover:bg-gray-100"
+                        >
+                            <option value="all">Tất cả</option>
+                            <option value="Trung tâm">Trung tâm</option>
+                            <option value="Đông">Đông</option>
+                            <option value="Nam">Nam</option>
+                            <option value="Tây">Tây</option>
+                            <option value="Bắc">Bắc</option>
+                            <option value="Ngoại thành">Ngoại thành</option>
+                        </select>
+                    </div>
+
+                    {/* NEW: District */}
+                    <div>
+                        <label className="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">Quận/Huyện</label>
+                        <select
+                            value={filters.district}
+                            onChange={(e) => setFilters({ ...filters, district: e.target.value })}
+                            className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 transition-all cursor-pointer hover:bg-gray-100"
+                        >
+                            <option value="all">Tất cả</option>
+                            <option value="Quận 1">Quận 1</option>
+                            <option value="Quận 2">Quận 2</option>
+                            <option value="Quận 3">Quận 3</option>
+                            <option value="Quận 4">Quận 4</option>
+                            <option value="Quận 5">Quận 5</option>
+                            <option value="Quận 6">Quận 6</option>
+                            <option value="Quận 7">Quận 7</option>
+                            <option value="Quận 8">Quận 8</option>
+                            <option value="Quận 9">Quận 9</option>
+                            <option value="Quận 10">Quận 10</option>
+                            <option value="Quận 11">Quận 11</option>
+                            <option value="Quận 12">Quận 12</option>
+                            <option value="Thủ Đức">Thủ Đức</option>
+                            <option value="Bình Thạnh">Bình Thạnh</option>
+                            <option value="Tân Bình">Tân Bình</option>
+                            <option value="Tân Phú">Tân Phú</option>
+                            <option value="Phú Nhuận">Phú Nhuận</option>
+                            <option value="Gò Vấp">Gò Vấp</option>
+                            <option value="Bình Tân">Bình Tân</option>
+                            <option value="Hóc Môn">Hóc Môn</option>
+                            <option value="Củ Chi">Củ Chi</option>
+                            <option value="Bình Chánh">Bình Chánh</option>
+                            <option value="Nhà Bè">Nhà Bè</option>
+                            <option value="Cần Giờ">Cần Giờ</option>
+                        </select>
+                    </div>
+
+                    {/* Row 3: Numeric Filters */}
+                    <div>
+                        <label className="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">Số đơn tối thiểu</label>
+                        <input
+                            type="number"
+                            min="0"
+                            value={filters.minOrders}
+                            onChange={(e) => setFilters({ ...filters, minOrders: e.target.value })}
+                            className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 transition-all hover:bg-gray-100"
+                            placeholder="0"
+                        />
+                    </div>
+
+                    <div>
+                        <label className="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">Chi tiêu tối thiểu</label>
+                        <input
+                            type="number"
+                            min="0"
+                            value={filters.minSpent}
+                            onChange={(e) => setFilters({ ...filters, minSpent: e.target.value })}
+                            className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 transition-all hover:bg-gray-100"
+                            placeholder="0"
+                        />
+                    </div>
+
+                    {/* Spacer + Reset */}
+                    <div className="md:col-span-2 lg:col-span-2 flex items-end justify-between">
+                        {/* Filtered count */}
+                        <div className="text-sm text-gray-600">
+                            Hiển thị <span className="font-semibold text-gray-900">{filteredCustomers.length}</span> / {enrichedCustomers.length} khách hàng
+                        </div>
+
+                        {/* Reset button */}
+                        <button
+                            onClick={() => {
+                                setFilters({
+                                    minOrders: '',
+                                    minSpent: '',
+                                    lastOrderDate: 'all',
+                                    segment: 'all',
+                                    churnRisk: 'all',
+                                    clvSegment: 'all',
+                                    loyaltyStage: 'all',
+                                    zone: 'all',
+                                    district: 'all'
+                                });
+                                setSortConfig({ key: 'lastOrder', direction: 'desc' });
+                                setSearchTerm('');
+                            }}
+                            className="flex items-center gap-2 px-4 py-2 text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition-colors cursor-pointer font-medium"
+                        >
+                            <RotateCcw size={16} />
+                            <span>Đặt lại</span>
+                        </button>
+                    </div>
                 </div>
             </div>
-            </div>
+            )}
 
-            {/* List Controls Toolbar */}
-            <div className="flex justify-end mb-4">
+            {/* List Controls Toolbar - Only show on overview tab */}
+            {activeTab === 'overview' && (
+            <div className="flex justify-between items-center mb-4">
+                {/* Export Button */}
+                <CustomerExport customers={filteredCustomers} />
+
+                {/* View Controls */}
                 <div className="flex items-center gap-4">
                     <div className="flex items-center gap-2">
                         <label className="text-sm font-medium text-gray-700">Show:</label>
@@ -392,7 +717,11 @@ const Customers = () => {
                     </div>
                 </div>
             </div>
+            )}
 
+            {/* Tab Content */}
+            {activeTab === 'overview' && (
+            <>
             {loading ? (
                 viewMode === 'grid' ? (
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -407,9 +736,15 @@ const Customers = () => {
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                     {currentCustomers.length > 0 ? (
                         currentCustomers.map((customer) => {
-                            // Calculate customer tenure
-                            const tenureDays = customer.createdAt ? Math.floor((Date.now() - new Date(customer.createdAt).getTime()) / (1000 * 60 * 60 * 24)) : 0;
+                            // Calculate customer tenure using stable timestamp
+                            const tenureDays = customer.createdAt ? Math.floor((currentTimestamp - new Date(customer.createdAt).getTime()) / (1000 * 60 * 60 * 24)) : 0;
                             const tenureMonths = Math.floor(tenureDays / 30);
+
+                            // Get colors for new badges
+                            const clvColors = getCLVSegmentColor(customer.clvSegment);
+                            const zoneColors = getZoneColor(customer.location?.zone);
+                            const churnColor = customer.churnRisk?.level === 'high' ? 'bg-red-500' :
+                                             customer.churnRisk?.level === 'medium' ? 'bg-orange-500' : 'bg-green-500';
 
                             return (
                                 <div
@@ -419,11 +754,23 @@ const Customers = () => {
                                 >
                                     <div className="flex justify-between items-start mb-4">
                                         <div className="flex items-center gap-3 flex-1 min-w-0">
-                                            <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-primary/10 to-primary/5 flex items-center justify-center text-primary font-bold text-xl font-heading flex-shrink-0">
+                                            <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-primary/10 to-primary/5 flex items-center justify-center text-primary font-bold text-xl font-heading flex-shrink-0 relative">
                                                 {customer.name ? customer.name.charAt(0).toUpperCase() : '?'}
+                                                {/* Churn Risk Dot */}
+                                                <div
+                                                    className={`absolute -top-1 -right-1 w-4 h-4 ${churnColor} rounded-full border-2 border-white`}
+                                                    title={`Rủi ro: ${customer.churnRisk?.label || 'N/A'}`}
+                                                />
                                             </div>
                                             <div className="flex-1 min-w-0">
-                                                <h3 className="font-bold text-gray-900 font-heading text-lg mb-1.5 truncate">{customer.name || 'Unknown'}</h3>
+                                                {/* Name + CLV Badge */}
+                                                <div className="flex items-center gap-2 mb-1.5">
+                                                    <h3 className="font-bold text-gray-900 font-heading text-lg truncate">{customer.name || 'Unknown'}</h3>
+                                                    {/* CLV Segment Badge */}
+                                                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium border ${clvColors}`}>
+                                                        {customer.clvSegment}
+                                                    </span>
+                                                </div>
                                                 <SegmentBadge segment={customer.rfm?.segment} size="sm" />
                                             </div>
                                         </div>
@@ -440,10 +787,13 @@ const Customers = () => {
                                                 <span className="truncate">{customer.email}</span>
                                             </div>
                                         )}
-                                        {customer.address && (
-                                            <div className="flex items-start gap-2.5 text-sm text-gray-600">
-                                                <MapPin size={14} className="text-gray-400 flex-shrink-0 mt-0.5" />
-                                                <span className="line-clamp-2 text-xs leading-relaxed">{customer.address}</span>
+                                        {/* Zone Label (NEW) */}
+                                        {customer.location?.zone && customer.location.zone !== 'Unknown' && (
+                                            <div className="flex items-center gap-2.5 text-sm text-gray-600">
+                                                <MapPin size={14} className="text-gray-400 flex-shrink-0" />
+                                                <span className={`text-xs px-2 py-0.5 rounded-full font-medium border ${zoneColors.bg} ${zoneColors.text} ${zoneColors.border}`}>
+                                                    {customer.location.zone}
+                                                </span>
                                             </div>
                                         )}
                                     </div>
@@ -464,6 +814,25 @@ const Customers = () => {
                                                 {new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND', notation: 'compact' }).format(Number(customer.totalSpent) || 0)}
                                             </p>
                                             <p className="text-xs text-primary/70 mt-0.5">{customer.orders} orders</p>
+                                        </div>
+                                    </div>
+
+                                    {/* Health Score Bar (NEW) */}
+                                    <div className="mb-4">
+                                        <div className="flex items-center justify-between text-xs mb-1.5">
+                                            <span className="font-medium text-gray-600">Sức khỏe</span>
+                                            <span className="font-bold text-gray-900">{customer.healthScore || 0}/100</span>
+                                        </div>
+                                        <div className="w-full bg-gray-200 rounded-full h-2">
+                                            <div
+                                                className={`h-2 rounded-full transition-all ${
+                                                    customer.healthScore >= 80 ? 'bg-green-500' :
+                                                    customer.healthScore >= 60 ? 'bg-blue-500' :
+                                                    customer.healthScore >= 40 ? 'bg-yellow-500' :
+                                                    customer.healthScore >= 20 ? 'bg-orange-500' : 'bg-red-500'
+                                                }`}
+                                                style={{ width: `${customer.healthScore || 0}%` }}
+                                            />
                                         </div>
                                     </div>
 
@@ -505,7 +874,8 @@ const Customers = () => {
                                     <th className="px-5 py-3.5 font-semibold text-xs text-gray-600 uppercase tracking-wider">Customer</th>
                                     <th className="px-5 py-3.5 font-semibold text-xs text-gray-600 uppercase tracking-wider">Segment</th>
                                     <th className="px-5 py-3.5 font-semibold text-xs text-gray-600 uppercase tracking-wider">Contact</th>
-                                    <th className="px-5 py-3.5 font-semibold text-xs text-gray-600 uppercase tracking-wider">Address</th>
+                                    <th className="px-5 py-3.5 font-semibold text-xs text-gray-600 uppercase tracking-wider">Location</th>
+                                    <th className="px-5 py-3.5 font-semibold text-xs text-gray-600 uppercase tracking-wider text-center">Health</th>
                                     <th className="px-5 py-3.5 font-semibold text-xs text-gray-600 uppercase tracking-wider text-center">Tenure</th>
                                     <th className="px-5 py-3.5 font-semibold text-xs text-gray-600 uppercase tracking-wider text-center">Orders</th>
                                     <th className="px-5 py-3.5 font-semibold text-xs text-gray-600 uppercase tracking-wider text-right">AOV</th>
@@ -517,8 +887,14 @@ const Customers = () => {
                             <tbody className="divide-y divide-gray-100">
                                 {currentCustomers.length > 0 ? (
                                     currentCustomers.map((customer) => {
-                                        const tenureDays = customer.createdAt ? Math.floor((Date.now() - new Date(customer.createdAt).getTime()) / (1000 * 60 * 60 * 24)) : 0;
+                                        const tenureDays = customer.createdAt ? Math.floor((currentTimestamp - new Date(customer.createdAt).getTime()) / (1000 * 60 * 60 * 24)) : 0;
                                         const tenureMonths = Math.floor(tenureDays / 30);
+
+                                        // Get colors for new badges
+                                        const clvColors = getCLVSegmentColor(customer.clvSegment);
+                                        const zoneColors = getZoneColor(customer.location?.zone);
+                                        const churnColor = customer.churnRisk?.level === 'high' ? 'bg-red-500' :
+                                                         customer.churnRisk?.level === 'medium' ? 'bg-orange-500' : 'bg-green-500';
 
                                         return (
                                             <tr
@@ -528,11 +904,22 @@ const Customers = () => {
                                             >
                                                 <td className="px-5 py-4">
                                                     <div className="flex items-center gap-3">
-                                                        <div className="w-11 h-11 rounded-lg bg-gradient-to-br from-primary/10 to-primary/5 flex items-center justify-center text-primary font-bold font-heading flex-shrink-0">
+                                                        <div className="w-11 h-11 rounded-lg bg-gradient-to-br from-primary/10 to-primary/5 flex items-center justify-center text-primary font-bold font-heading flex-shrink-0 relative">
                                                             {customer.name ? customer.name.charAt(0).toUpperCase() : '?'}
+                                                            {/* Churn Risk Dot */}
+                                                            <div
+                                                                className={`absolute -top-1 -right-1 w-3 h-3 ${churnColor} rounded-full border-2 border-white`}
+                                                                title={`Rủi ro: ${customer.churnRisk?.label || 'N/A'}`}
+                                                            />
                                                         </div>
                                                         <div className="min-w-0">
-                                                            <div className="font-semibold text-gray-900 truncate">{customer.name || 'Unknown'}</div>
+                                                            <div className="flex items-center gap-2 mb-1">
+                                                                <div className="font-semibold text-gray-900 truncate">{customer.name || 'Unknown'}</div>
+                                                                {/* CLV Badge */}
+                                                                <span className={`text-xs px-1.5 py-0.5 rounded font-medium border ${clvColors}`}>
+                                                                    {customer.clvSegment}
+                                                                </span>
+                                                            </div>
                                                             <div className="text-xs text-gray-500">
                                                                 Joined {customer.createdAt ? new Date(customer.createdAt).toLocaleDateString('vi-VN') : 'N/A'}
                                                             </div>
@@ -558,15 +945,39 @@ const Customers = () => {
                                                         )}
                                                     </div>
                                                 </td>
-                                                <td className="px-5 py-4 max-w-[200px]">
-                                                    {customer.address ? (
-                                                        <div className="flex items-start gap-2 text-gray-600 text-sm">
-                                                            <MapPin size={13} className="text-gray-400 flex-shrink-0 mt-0.5" />
-                                                            <span className="line-clamp-2 text-xs">{customer.address}</span>
+                                                {/* Location Column (NEW) */}
+                                                <td className="px-5 py-4">
+                                                    {customer.location?.zone && customer.location.zone !== 'Unknown' ? (
+                                                        <div>
+                                                            <span className={`inline-block text-xs px-2 py-1 rounded-full font-medium border ${zoneColors.bg} ${zoneColors.text} ${zoneColors.border}`}>
+                                                                {customer.location.zone}
+                                                            </span>
+                                                            {customer.location?.district && customer.location.district !== 'Unknown' && (
+                                                                <div className="text-xs text-gray-500 mt-1">{customer.location.district}</div>
+                                                            )}
                                                         </div>
                                                     ) : (
-                                                        <span className="text-xs text-gray-400">No address</span>
+                                                        <span className="text-xs text-gray-400">Unknown</span>
                                                     )}
+                                                </td>
+                                                {/* Health Score Column (NEW) */}
+                                                <td className="px-5 py-4 text-center">
+                                                    <div className="flex flex-col items-center">
+                                                        <span className="font-semibold text-gray-900 text-sm mb-1">
+                                                            {customer.healthScore || 0}
+                                                        </span>
+                                                        <div className="w-16 bg-gray-200 rounded-full h-1.5">
+                                                            <div
+                                                                className={`h-1.5 rounded-full ${
+                                                                    customer.healthScore >= 80 ? 'bg-green-500' :
+                                                                    customer.healthScore >= 60 ? 'bg-blue-500' :
+                                                                    customer.healthScore >= 40 ? 'bg-yellow-500' :
+                                                                    customer.healthScore >= 20 ? 'bg-orange-500' : 'bg-red-500'
+                                                                }`}
+                                                                style={{ width: `${customer.healthScore || 0}%` }}
+                                                            />
+                                                        </div>
+                                                    </div>
                                                 </td>
                                                 <td className="px-5 py-4 text-center">
                                                     <div className="flex flex-col items-center">
@@ -609,7 +1020,7 @@ const Customers = () => {
                                     })
                                 ) : (
                                     <tr>
-                                        <td colSpan="10" className="px-5 py-16 text-center text-gray-500">
+                                        <td colSpan="11" className="px-5 py-16 text-center text-gray-500">
                                             <div className="flex flex-col items-center gap-2">
                                                 <Search size={40} className="text-gray-300" />
                                                 <p className="font-medium">No customers found</p>
@@ -675,6 +1086,51 @@ const Customers = () => {
                     </div>
                 </div>
             )}
+            </>
+            )}
+
+            {/* Cohort Analysis Tab */}
+            {activeTab === 'cohort' && (
+                <Suspense fallback={
+                    <div className="flex items-center justify-center py-20">
+                        <div className="text-center">
+                            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
+                            <p className="text-gray-500">Loading cohort analysis...</p>
+                        </div>
+                    </div>
+                }>
+                    <CohortAnalysisView customers={enrichedCustomers} orders={orders} />
+                </Suspense>
+            )}
+
+            {/* Product Affinity Tab */}
+            {activeTab === 'products' && (
+                <Suspense fallback={
+                    <div className="flex items-center justify-center py-20">
+                        <div className="text-center">
+                            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
+                            <p className="text-gray-500">Loading product affinity...</p>
+                        </div>
+                    </div>
+                }>
+                    <ProductAffinityView customers={enrichedCustomers} orders={orders} />
+                </Suspense>
+            )}
+
+            {/* Geographic View Tab */}
+            {activeTab === 'geographic' && (
+                <Suspense fallback={
+                    <div className="flex items-center justify-center py-20">
+                        <div className="text-center">
+                            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
+                            <p className="text-gray-500">Loading geographic view...</p>
+                        </div>
+                    </div>
+                }>
+                    <GeographicView customers={enrichedCustomers} />
+                </Suspense>
+            )}
+
             {/* Customer Details Modal */}
             <CustomerDetailsModal
                 isOpen={!!selectedCustomer}

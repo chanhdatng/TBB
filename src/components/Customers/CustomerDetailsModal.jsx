@@ -2,6 +2,18 @@ import React, { useMemo } from 'react';
 import { X, Package, Calendar, MapPin, Phone, Mail, TrendingUp, Clock, ShoppingCart, Star } from 'lucide-react';
 import * as LucideIcons from 'lucide-react';
 import { getSegmentColor, getSegmentIcon, getSegmentDescription, getScoreColor, getScoreLabel } from '../../utils/rfm';
+import { getCLVSegmentColor } from '../../utils/customerMetrics';
+import { getZoneColor, getDeliveryTier } from '../../utils/addressParser';
+
+// Helper function to format currency
+const formatCurrency = (value) => {
+    return new Intl.NumberFormat('vi-VN', {
+        style: 'currency',
+        currency: 'VND',
+        notation: 'compact',
+        maximumFractionDigits: 1
+    }).format(value || 0);
+};
 
 // RFM Score Bar Component - Moved outside to prevent recreation on every render
 const RFMScoreBar = ({ label, score, maxScore = 5, explanation }) => (
@@ -132,6 +144,70 @@ const CustomerDetailsModal = ({ isOpen, onClose, customer, orders }) => {
                     </button>
                 </div>
 
+                {/* Top Summary Bar */}
+                <div className="p-6 border-b bg-gradient-to-r from-purple-50 to-blue-50">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                        {/* CLV */}
+                        <div>
+                            <p className="text-xs text-gray-600 mb-1">CLV Dự kiến</p>
+                            <p className="text-2xl font-bold text-purple-900">
+                                {formatCurrency(customer.clv)}
+                            </p>
+                            {customer.clvSegment && (
+                                <span className={`text-xs px-2 py-0.5 rounded ${getCLVSegmentColor(customer.clvSegment)}`}>
+                                    {customer.clvSegment}
+                                </span>
+                            )}
+                        </div>
+
+                        {/* Health Score */}
+                        <div>
+                            <p className="text-xs text-gray-600 mb-1">Sức khỏe</p>
+                            <p className="text-2xl font-bold">{customer.healthScore || 0}/100</p>
+                            <div
+                                className="w-full bg-gray-200 h-2 rounded-full mt-1"
+                                role="progressbar"
+                                aria-valuenow={customer.healthScore || 0}
+                                aria-valuemin="0"
+                                aria-valuemax="100"
+                                aria-label="Customer health score"
+                            >
+                                <div
+                                    style={{ width: `${customer.healthScore || 0}%` }}
+                                    className="h-2 bg-green-500 rounded-full transition-all"
+                                />
+                            </div>
+                        </div>
+
+                        {/* Churn Risk */}
+                        <div>
+                            <p className="text-xs text-gray-600 mb-1">Rủi ro</p>
+                            {customer.churnRisk ? (
+                                <>
+                                    <span className={`inline-block px-3 py-1 rounded-full ${customer.churnRisk.color}`}>
+                                        {customer.churnRisk.label}
+                                    </span>
+                                    <p className="text-xs text-gray-600 mt-1">Score: {customer.churnRisk.score}/100</p>
+                                </>
+                            ) : (
+                                <span className="text-sm text-gray-400">N/A</span>
+                            )}
+                        </div>
+
+                        {/* Loyalty Stage */}
+                        <div>
+                            <p className="text-xs text-gray-600 mb-1">Giai đoạn</p>
+                            {customer.loyaltyStage ? (
+                                <span className={`inline-block px-3 py-1 rounded-full ${customer.loyaltyStage.color}`}>
+                                    {customer.loyaltyStage.label}
+                                </span>
+                            ) : (
+                                <span className="text-sm text-gray-400">N/A</span>
+                            )}
+                        </div>
+                    </div>
+                </div>
+
                 {/* RFM Scorecard */}
                 {customer.rfm && (
                     <div className="p-6 border-b border-gray-200 bg-gradient-to-br from-gray-50/50 to-white">
@@ -246,6 +322,31 @@ const CustomerDetailsModal = ({ isOpen, onClose, customer, orders }) => {
                     </div>
                 )}
 
+                {/* Behavioral Insights Card */}
+                {customer.behavior && (
+                    <div className="p-6 border-b bg-blue-50/30">
+                        <h3 className="font-bold text-lg mb-4">Hành vi mua hàng</h3>
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <div className="bg-white p-4 rounded-lg">
+                                <p className="text-xs text-gray-600 mb-1">Ngày thường mua</p>
+                                <p className="font-bold text-lg">{customer.behavior.peakDay || 'N/A'}</p>
+                            </div>
+                            <div className="bg-white p-4 rounded-lg">
+                                <p className="text-xs text-gray-600 mb-1">Giờ thường mua</p>
+                                <p className="font-bold text-lg">{customer.behavior.peakHour || 'N/A'}</p>
+                            </div>
+                            <div className="bg-white p-4 rounded-lg">
+                                <p className="text-xs text-gray-600 mb-1">Khoảng cách đơn TB</p>
+                                <p className="font-bold text-lg">
+                                    {customer.behavior.avgDaysBetweenOrders
+                                        ? `${customer.behavior.avgDaysBetweenOrders} ngày`
+                                        : 'N/A'}
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
                 {/* Favorite Items */}
                 {purchaseMetrics?.favoriteItems?.length > 0 && (
                     <div className="p-6 border-b border-gray-200 bg-gradient-to-br from-amber-50/30 to-white">
@@ -267,6 +368,37 @@ const CustomerDetailsModal = ({ isOpen, onClose, customer, orders }) => {
                                     </span>
                                 </div>
                             ))}
+                        </div>
+                    </div>
+                )}
+
+                {/* Location Info Card */}
+                {customer.location && (
+                    <div className="p-6 border-b">
+                        <h3 className="font-bold text-lg mb-4">Thông tin địa lý</h3>
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <div>
+                                <p className="text-xs text-gray-600 mb-1">Quận/Huyện</p>
+                                <p className="font-bold">{customer.location.district || 'N/A'}</p>
+                            </div>
+                            <div>
+                                <p className="text-xs text-gray-600 mb-1">Khu vực</p>
+                                {customer.location.zone ? (
+                                    <span className={`px-2 py-1 rounded ${getZoneColor(customer.location.zone)}`}>
+                                        {customer.location.zone}
+                                    </span>
+                                ) : (
+                                    <span className="text-sm text-gray-400">N/A</span>
+                                )}
+                            </div>
+                            <div>
+                                <p className="text-xs text-gray-600 mb-1">Tier giao hàng</p>
+                                <p className="font-bold">
+                                    {customer.location.district
+                                        ? getDeliveryTier(customer.location.district).label
+                                        : 'N/A'}
+                                </p>
+                            </div>
                         </div>
                     </div>
                 )}

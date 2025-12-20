@@ -13,6 +13,15 @@ export const DataProvider = ({ children }) => {
     const [products, setProducts] = useState([]);
     const [loading, setLoading] = useState(true);
 
+    // Analytics State (Phase 4)
+    const [productAnalytics, setProductAnalytics] = useState({});
+    const [globalRankings, setGlobalRankings] = useState(null);
+    const [analyticsLoading, setAnalyticsLoading] = useState(true);
+
+    // Customer Analytics State (Phase 2)
+    const [customerMetrics, setCustomerMetrics] = useState({});
+    const [customerMetricsLoading, setCustomerMetricsLoading] = useState(true);
+
     // Helper to format date as YYYY-MM-DD in local time
     const formatLocalDate = (date) => {
         const year = date.getFullYear();
@@ -27,6 +36,14 @@ export const DataProvider = ({ children }) => {
     };
 
     useEffect(() => {
+        // Fallback timeout - if Firebase doesn't respond in 10 seconds, stop loading anyway
+        const loadingTimeout = setTimeout(() => {
+            console.warn('⚠️ Firebase loading timeout - forcing loading states to false');
+            setLoading(false);
+            setAnalyticsLoading(false);
+            setCustomerMetricsLoading(false);
+        }, 10000);
+
         const ordersRef = ref(database, 'orders');
         const preOrdersRef = ref(database, 'preorders');
 
@@ -212,18 +229,91 @@ export const DataProvider = ({ children }) => {
             }
         });
 
+        // Fetch Product Analytics (Phase 4)
+        const analyticsRef = ref(database, 'productAnalytics');
+        let analyticsUnsubscribe;
+        analyticsUnsubscribe = onValue(analyticsRef, (snapshot) => {
+            const data = snapshot.val();
+            setProductAnalytics(data || {});
+            setAnalyticsLoading(false);
+        });
+
+        // Fetch Global Rankings (Phase 4)
+        const rankingsRef = ref(database, 'globalRankings/current');
+        let rankingsUnsubscribe;
+        rankingsUnsubscribe = onValue(rankingsRef, (snapshot) => {
+            const data = snapshot.val();
+            setGlobalRankings(data);
+        });
+
+        // Fetch Customer Metrics (Phase 2)
+        const customerMetricsRef = ref(database, 'customerMetrics');
+        let customerMetricsUnsubscribe;
+        customerMetricsUnsubscribe = onValue(customerMetricsRef, (snapshot) => {
+            const data = snapshot.val();
+            setCustomerMetrics(data || {});
+            setCustomerMetricsLoading(false);
+            if (process.env.NODE_ENV === 'development') {
+                console.log(`✅ Loaded metrics for ${Object.keys(data || {}).length} customers`);
+            }
+        }, (error) => {
+            console.error('❌ Error fetching customerMetrics:', error);
+            setCustomerMetricsLoading(false); // Prevent infinite loading
+        });
+
         setLoading(false);
 
         return () => {
+            clearTimeout(loadingTimeout);
             if (ordersUnsubscribe) ordersUnsubscribe();
             if (preOrdersUnsubscribe) preOrdersUnsubscribe();
             if (customersUnsubscribe) customersUnsubscribe();
             if (productsUnsubscribe) productsUnsubscribe();
+            if (analyticsUnsubscribe) analyticsUnsubscribe();
+            if (rankingsUnsubscribe) rankingsUnsubscribe();
+            if (customerMetricsUnsubscribe) customerMetricsUnsubscribe();
         };
     }, []);
 
+    // Analytics Helper Functions (Phase 4)
+    const getProductAnalytics = (productId) => {
+        return productAnalytics[productId] || null;
+    };
+
+    const getTopSellers = (limit = 10) => {
+        return globalRankings?.topSellers?.slice(0, limit) || [];
+    };
+
+    const getSlowMovers = (limit = 10) => {
+        return globalRankings?.slowMovers?.slice(0, limit) || [];
+    };
+
+    const getTrending = (limit = 10) => {
+        return globalRankings?.trending?.slice(0, limit) || [];
+    };
+
+    const getTopRevenue = (limit = 10) => {
+        return globalRankings?.topRevenue?.slice(0, limit) || [];
+    };
+
     return (
-        <DataContext.Provider value={{ orders, preOrders, customers, products, loading }}>
+        <DataContext.Provider value={{
+            // Existing data
+            orders, preOrders, customers, products, loading,
+            // Analytics data (Phase 4)
+            productAnalytics,
+            globalRankings,
+            analyticsLoading,
+            // Customer analytics data (Phase 2)
+            customerMetrics,
+            customerMetricsLoading,
+            // Analytics helpers (Phase 4)
+            getProductAnalytics,
+            getTopSellers,
+            getSlowMovers,
+            getTrending,
+            getTopRevenue
+        }}>
             {children}
         </DataContext.Provider>
     );

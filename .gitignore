@@ -9,8 +9,20 @@ lerna-debug.log*
 
 node_modules
 dist
+dist-dev
 dist-ssr
 *.local
+
+# Environment variables (IMPORTANT: Never commit these!)
+.env
+.env.local
+.env.*.local
+backend/.env
+backend/.env.local
+
+# Firebase service account keys (IMPORTANT: Never commit these!)
+**/serviceAccountKey.json
+serviceAccountKey.json
 
 # Editor directories and files
 .vscode/*

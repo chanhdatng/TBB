@@ -5,6 +5,7 @@ import RecentOrders from '../components/Dashboard/RecentOrders';
 import PasswordModal from '../components/Common/PasswordModal';
 import ProductStatsCard from '../components/Dashboard/ProductStatsCard';
 import { Wallet, PiggyBank, TrendingUp, Plus, MoreHorizontal, ShoppingBag, Eye, EyeOff, Users, Award, Globe } from 'lucide-react';
+import CustomerGrowthCard from '../components/Dashboard/CustomerGrowthCard';
 import { useData } from '../contexts/DataContext';
 
 const Dashboard = () => {
@@ -447,9 +448,9 @@ const Dashboard = () => {
             </div>
 
             {/* Charts & Widgets Section */}
-            <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 mb-6">
-                {/* Main Chart */}
-                <div className="xl:col-span-2">
+            <div className="flex flex-col gap-6 mb-6">
+                {/* Main Chart Row */}
+                <div className="w-full">
                     <RevenueChart
                         data={chartData}
                         isVisible={isRevenueVisible}
@@ -458,14 +459,22 @@ const Dashboard = () => {
                     />
                 </div>
 
-                {/* Product Stats Card */}
-                <div className="xl:col-span-1">
-                    <ProductStatsCard
-                        data={stats.productStats}
-                        totalSales={stats.totalOrders} // Or total items sold if preferred
-                        totalTrend={stats.ordersTrend}
-                        timeRangeLabel={timeRangeLabels[timeRange]}
-                    />
+                {/* Lower Stats Row */}
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {/* Product Stats Card */}
+                    <div className="md:col-span-1 lg:col-span-1 h-full">
+                        <ProductStatsCard
+                            data={stats.productStats}
+                            totalSales={stats.totalOrders}
+                            totalTrend={stats.ordersTrend}
+                            timeRangeLabel={timeRangeLabels[timeRange]}
+                        />
+                    </div>
+
+                    {/* Customer Analytics Section */}
+                    <div className="md:col-span-1 lg:col-span-2 h-full">
+                        <CustomerGrowthCard />
+                    </div>
                 </div>
             </div>
 

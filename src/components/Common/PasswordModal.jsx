@@ -9,7 +9,17 @@ const PasswordModal = ({ isOpen, onClose, onSuccess }) => {
 
     const handleSubmit = (e) => {
         e.preventDefault();
-        if (password === 'kyo1122') {
+        
+        // Get password from environment variable instead of hardcoding
+        const correctPassword = import.meta.env.VITE_REVENUE_PASSWORD;
+        
+        if (!correctPassword) {
+            console.error('VITE_REVENUE_PASSWORD not configured in .env');
+            setError('Configuration error. Please contact admin.');
+            return;
+        }
+        
+        if (password === correctPassword) {
             onSuccess();
             onClose();
             setPassword('');

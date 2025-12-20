@@ -19,7 +19,8 @@ export default {
         accent: '#D1E7DD',
       },
       fontFamily: {
-        sans: ['Inter', 'sans-serif'],
+        sans: ['Poppins', 'Inter', 'sans-serif'],
+        script: ['Great Vibes', 'cursive'],
       }
     },
   },

@@ -4,10 +4,11 @@
 
 This document provides a comprehensive summary of The Butter Bake codebase, including directory structure, key modules, component architecture, data flow patterns, and external dependencies.
 
-**Last Updated**: 2025-12-04
-**Total Files**: 113 source files
+**Last Updated**: 2025-12-07
+**Total Files**: 156 source files (Phase 5 additions)
 **Total Lines**: ~20M characters (including data files)
 **Primary Language**: JavaScript (React/JSX)
+**Latest Phase**: Phase 5 - Tabbed Interface ✅ COMPLETED
 
 ---
 
@@ -231,16 +232,32 @@ Page-level components mapped to routes.
 - `PreorderCartModal` - Shopping cart
 - `PreorderCheckoutModal` - Checkout process
 
-#### `/src/pages/Customers.jsx` (33,541 lines)
-**Purpose**: Customer management and RFM analytics
+#### `/src/pages/Customers.jsx` (1,203 lines)
+**Purpose**: Customer management and advanced analytics dashboard
 
 **Features**:
-- Customer list with RFM segment badges
-- Search by name/phone/email
-- Filter by customer segment
-- RFM score visualization
-- Customer detail modal with comprehensive metrics
-- Activity status indicators
+- **4-Tab Interface** (Phase 5):
+  - Tổng quan (Overview): Customer list with advanced filters
+  - Phân tích Cohort (Cohort Analysis): Retention heatmap
+  - Sản phẩm (Products): Product affinity by segment
+  - Địa lý (Geographic): HCM district/zone distribution
+
+- **Overview Tab**:
+  - Customer list with RFM segment badges
+  - Grid/List view toggle
+  - Advanced filters (11 filter criteria)
+  - Search by name/phone/email
+  - Sort by CLV, health score, churn risk
+  - Pagination (10/25/50/100 per page)
+  - 6 summary statistic cards
+
+- **Advanced Metrics** (Phase 1-4):
+  - CLV (Customer Lifetime Value)
+  - Churn Risk Score (high/medium/low)
+  - Health Score (0-100)
+  - Loyalty Stage (Champion/Loyal/Growing/New/At Risk/Lost)
+  - Geographic Location (Zone/District parsing)
+  - 3-month spending trend
 
 **RFM Segments** (11 total):
 1. Champions - Best customers
@@ -255,17 +272,16 @@ Page-level components mapped to routes.
 10. Hibernating - Long inactive
 11. Lost - Inactive with low value
 
-**Metrics Displayed**:
-- Total orders, total spent
-- Last order date
-- RFM scores (R, F, M)
-- Customer segment
-- Activity status
-- Average order value
-- Customer tenure
+**Filter Criteria**:
+- RFM Segment, CLV Segment, Churn Risk, Loyalty Stage
+- Zone (6 HCM zones), District (24 districts)
+- Min Orders, Min Spent, Last Order Date
 
 **Components**:
-- `CustomerDetailsModal` - Detailed customer view with RFM breakdown
+- `CustomerDetailsModal` - Detailed customer profile
+- `CohortAnalysisView` - Retention heatmap
+- `ProductAffinityView` - Product preference analysis
+- `GeographicView` - Geographic distribution
 
 #### `/src/pages/Products.jsx` (9,964 lines)
 **Purpose**: Product catalog management
@@ -443,6 +459,28 @@ Modular, reusable React components.
 └──────────────────────────┘
 ```
 
+**`CohortAnalysisView.jsx`** (200 lines) - Phase 5
+- Retention heatmap (12 months × cohorts)
+- Color-coded retention rates (green ≥50%, yellow 30-49%, orange 15-29%, red <15%)
+- Summary statistics: Total cohorts, avg cohort size, month-3 retention
+- Vietnamese localization (Tháng labels)
+- Uses `buildCohortRetentionData()` utility
+
+**`ProductAffinityView.jsx`** (205 lines) - Phase 5
+- Top 10 best-selling products overall
+- Product preferences by RFM segment
+- Quantity and revenue breakdown
+- Segment-specific product recommendations
+- Vietnamese labels and formatting
+
+**`GeographicView.jsx`** (239 lines) - Phase 5
+- TP.HCM zone distribution (6 zones: Trung tâm, Đông, Nam, Tây, Bắc, Ngoại thành)
+- Top 10 districts by customer count
+- Revenue and AOV metrics per zone/district
+- Delivery tier classification (Tier 1: Fast, Tier 2: Normal, Tier 3: Far)
+- Color-coded zones with visual cards
+- Uses `calculateGeographicStats()` and `parseAddress()` utilities
+
 #### DataSync Components (`/src/components/DataSync`)
 
 **`SyncDataModal.jsx`**
@@ -553,6 +591,68 @@ Top 20%      → 5 (Highest spender)
 60-80%       → 2
 Bottom 20%   → 1 (Lowest spender)
 ```
+
+#### `/src/utils/customerMetrics.js` (451 lines) - Phase 1-5
+**Purpose**: Advanced customer analytics beyond RFM
+
+**CLV Functions**:
+- `calculateCLV(customer)` → predicted Customer Lifetime Value (VND)
+- `getCLVSegment(clv, allCLVs)` → 'VIP' | 'High' | 'Medium' | 'Low'
+- `getCLVSegmentColor(segment)` → Tailwind classes
+
+**Churn Risk**:
+- `calculateChurnRisk(customer)` → { level, score, label, color }
+  - Factors: Recency (50%), Declining trend (30%), Past value (20%)
+  - Levels: high (≥60), medium (30-59), low (<30)
+
+**Health Score**:
+- `calculateHealthScore(customer)` → 0-100
+  - Components: RFM scores (75%) + Trend (25%)
+- `getHealthScoreLevel(score)` → { label, color, bgColor }
+
+**Loyalty Stage**:
+- `getLoyaltyStage(customer)` → { stage, label, color, icon }
+  - Stages: Champion, Loyal, Growing, New, At Risk, Lost
+
+**Cohort Analysis** (Phase 5):
+- `getCohortGroup(customer)` → { monthly, quarterly, yearly, labels }
+- `buildCohortRetentionData(customers, orders)` → cohort retention heatmap
+  - Tracks monthly retention rates up to 12 months
+  - Returns: [{ cohort, label, size, retention: [{ month, rate, active, total }] }]
+
+**Product Affinity** (Phase 5):
+- `calculateProductAffinity(customer, orders)` → top 5 products per customer
+- `analyzeProductAffinityBySegment(customers, orders)` → products by RFM segment
+  - Returns: { [segment]: [{ name, count }] }
+
+**Behavioral Patterns** (Phase 5):
+- `analyzeBehavioralPatterns(customer, orders)` → { peakDay, peakHour, avgDaysBetweenOrders }
+
+**Repurchase Rate**:
+- `calculateRepurchaseRate(allCustomers)` → % with 2+ orders
+
+#### `/src/utils/addressParser.js` (194 lines) - Phase 5
+**Purpose**: TP.HCM address parsing and geographic analytics
+
+**Constants**:
+- `HCM_DISTRICTS` - 24 districts with aliases and zone mapping
+  - Zones: Trung tâm, Đông, Nam, Tây, Bắc, Ngoại thành
+
+**Parsing Functions**:
+- `parseAddress(address)` → { district, zone, raw }
+  - Parses Vietnamese addresses (handles "Q1", "Quận 1", "q.1")
+  - Normalizes district names
+
+**Geographic Analytics**:
+- `calculateGeographicStats(customers)` → comprehensive geo stats
+  - Returns: { byDistrict, byZone, topDistricts, topZones, totalIdentified, totalUnknown }
+
+**Visual Helpers**:
+- `getZoneColor(zone)` → { bg, text, border, hex } for 6 HCM zones
+- `getDeliveryTier(district)` → { tier, label, color }
+  - Tier 1: Central (fast delivery)
+  - Tier 2: Suburban (normal)
+  - Tier 3: Outlying (slow/expensive)
 
 #### `/src/utils/imageGenerator.js`
 **Purpose**: AI-powered product image generation

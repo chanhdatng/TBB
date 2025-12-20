@@ -1,0 +1,19 @@
+Kiểm tra tiếng Việt - Vietnamese Test
+
+Các ký tự đặc biệt:
+- Dấu sắc: á é í ó ú ý
+- Dấu huyền: à è ì ò ù ỳ
+- Dấu hỏi: ả ẻ ỉ ỏ ủ ỷ
+- Dấu ngã: ã ẽ ĩ õ ũ ỹ
+- Dấu nặng: ạ ẹ ị ọ ụ ỵ
+
+Các nguyên âm đặc biệt:
+- ă: ằ ắ ẳ ẵ ặ
+- â: ầ ấ ẩ ẫ ậ
+- ê: ề ế ể ễ ệ
+- ô: ồ ố ổ ỗ ộ
+- ơ: ờ ớ ở ỡ ợ
+- ư: ừ ứ ử ữ ự
+- đ: Đ
+
+Ví dụ câu: Xin chào! Tôi đang kiểm tra hỗ trợ tiếng Việt trong Claude Code.

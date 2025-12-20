@@ -1,12 +1,21 @@
 import React, { useState, useEffect } from 'react';
-import { Search, Plus, MoreHorizontal, Filter, Package } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Search, Plus, MoreHorizontal, Filter, Package, BarChart3 } from 'lucide-react';
 import { database } from '../firebase';
 import { ref, onValue } from "firebase/database";
+import ProductDetailModal from '../components/Products/ProductDetailModal';
+import AddProductModal from '../components/Products/AddProductModal';
+import { useToast } from '../contexts/ToastContext';
 
 const Products = () => {
+    const navigate = useNavigate();
+    const { showToast: addToast } = useToast();
+    console.log('addToast function:', typeof addToast);
     const [products, setProducts] = useState([]);
     const [filter, setFilter] = useState('All');
     const [categories, setCategories] = useState(['All']);
+    const [selectedProduct, setSelectedProduct] = useState(null);
+    const [showAddModal, setShowAddModal] = useState(false);
 
     useEffect(() => {
         const productsRef = ref(database, 'cakes');
@@ -52,6 +61,7 @@ const Products = () => {
         if (lowerType.includes('cake') || lowerType.includes('bánh kem') || lowerType.includes('sinh nhật')) return '/assets/icons/cake.png';
         if (lowerType.includes('brownie') || lowerType.includes('socola')) return '/assets/icons/brownie.png';
         if (lowerType.includes('banana') || lowerType.includes('chuối')) return '/assets/icons/banana.png';
+        if (lowerType.includes('danish')) return '/assets/icons/danish.png';
         if (lowerType.includes('pastry') || lowerType.includes('croissant') || lowerType.includes('ngàn lớp')) return '/assets/icons/pastry.png';
         if (lowerType.includes('bread') || lowerType.includes('mì') || lowerType.includes('loaf') || lowerType.includes('pão') || lowerType.includes('cheese bread')) return '/assets/icons/bread.png';
         if (lowerType.includes('cookie') || lowerType.includes('quy')) return '/assets/icons/cookie.png';
@@ -66,10 +76,22 @@ const Products = () => {
                     <h1 className="text-2xl font-bold text-gray-900">Products</h1>
                     <p className="text-gray-500 mt-1">Manage your bakery inventory</p>
                 </div>
-                <button className="flex items-center gap-2 bg-primary hover:bg-primary-light text-white px-4 py-2 rounded-lg font-medium transition-colors">
-                    <Plus size={20} />
-                    Add Product
-                </button>
+                <div className="flex gap-2">
+                    <button 
+                        onClick={() => navigate('/admin/product-analytics')}
+                        className="flex items-center gap-2 bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg font-medium transition-colors"
+                    >
+                        <BarChart3 size={20} />
+                        Analytics
+                    </button>
+                    <button
+                        onClick={() => setShowAddModal(true)}
+                        className="flex items-center gap-2 bg-primary hover:bg-primary-light text-white px-4 py-2 rounded-lg font-medium transition-colors"
+                    >
+                        <Plus size={20} />
+                        Add Product
+                    </button>
+                </div>
             </div>
 
             <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden mb-6">
@@ -115,7 +137,11 @@ const Products = () => {
                             </h2>
                             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-4">
                                 {categoryProducts.map((product) => (
-                                    <div key={product.id} className="bg-white rounded-lg border border-gray-100 shadow-sm hover:shadow-md transition-all group">
+                                    <div 
+                                        key={product.id} 
+                                        className="bg-white rounded-lg border border-gray-100 shadow-sm hover:shadow-md transition-all group cursor-pointer"
+                                        onClick={() => setSelectedProduct(product)}
+                                    >
                                         <div className="aspect-square w-full overflow-hidden rounded-t-lg bg-gray-50 relative">
                                             <img 
                                                 src={product.image || getPlaceholderImage(product.type)} 
@@ -159,6 +185,23 @@ const Products = () => {
                     </div>
                 )}
             </div>
+
+            {/* Product Detail Modal */}
+            <ProductDetailModal
+                product={selectedProduct}
+                isOpen={!!selectedProduct}
+                onClose={() => setSelectedProduct(null)}
+            />
+
+            {/* Add Product Modal */}
+            <AddProductModal
+                isOpen={showAddModal}
+                onClose={() => setShowAddModal(false)}
+                onProductAdded={() => {
+                    // Refresh products list or do other actions
+                }}
+                addToast={addToast}
+            />
         </div>
     );
 };
