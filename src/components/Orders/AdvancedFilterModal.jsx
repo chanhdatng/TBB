@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, CheckCircle2, Clock, XCircle, Layers } from 'lucide-react';
+import { X, CheckCircle2, Clock, XCircle, Layers, AlertCircle, ArrowDown } from 'lucide-react';
 
 const AdvancedFilterModal = ({ isOpen, onClose, onApply, availableCakeTypes, initialFilters, maxPriceLimit = 5000000, statusOptions = [] }) => {
     const [filters, setFilters] = useState(initialFilters);
@@ -40,6 +40,27 @@ const AdvancedFilterModal = ({ isOpen, onClose, onApply, availableCakeTypes, ini
         });
     };
 
+    // Priority filter options
+    const priorityOptions = [
+        { value: 'all', label: 'Tất cả', icon: Layers, color: 'text-gray-600', bg: 'bg-gray-100' },
+        { value: 'high', label: 'Gấp', icon: AlertCircle, color: 'text-red-600', bg: 'bg-red-100' },
+        { value: 'normal', label: 'Bình thường', icon: null, color: 'text-gray-600', bg: 'bg-gray-100' },
+        { value: 'low', label: 'Thấp', icon: ArrowDown, color: 'text-gray-500', bg: 'bg-gray-100' }
+    ];
+
+    const handlePriorityChange = (priority) => {
+        if (priority === 'all') {
+            setFilters(prev => ({ ...prev, priority: [] }));
+            return;
+        }
+        setFilters(prev => {
+            const newPriority = prev.priority?.includes(priority)
+                ? prev.priority.filter(p => p !== priority)
+                : [...(prev.priority || []), priority];
+            return { ...prev, priority: newPriority };
+        });
+    };
+
     const handlePriceChange = (e, index) => {
         const value = Number(e.target.value);
         const newRange = [...priceRange];
@@ -65,6 +86,7 @@ const AdvancedFilterModal = ({ isOpen, onClose, onApply, availableCakeTypes, ini
         setFilters({
             cakeTypes: [],
             status: [],
+            priority: [],
             minPrice: '',
             maxPrice: ''
         });
@@ -116,7 +138,35 @@ const AdvancedFilterModal = ({ isOpen, onClose, onApply, availableCakeTypes, ini
                         </div>
                     </div>
 
+                    {/* Priority */}
+                    <div>
+                        <h3 className="text-sm font-bold text-gray-900 mb-3">Mức độ ưu tiên</h3>
+                        <div className="grid grid-cols-2 gap-3">
+                            {priorityOptions.map((option) => {
+                                const isSelected = option.value === 'all'
+                                    ? !filters.priority || filters.priority.length === 0
+                                    : filters.priority?.includes(option.value);
 
+                                return (
+                                    <button
+                                        key={option.value}
+                                        onClick={() => handlePriorityChange(option.value)}
+                                        className={`flex items-center gap-3 p-3 rounded-xl border transition-all ${isSelected
+                                            ? `ring-2 ring-primary/50 border-primary bg-primary/5`
+                                            : 'border-gray-100 hover:bg-gray-50 hover:border-gray-200'
+                                            }`}
+                                    >
+                                        <div className={`w-8 h-8 rounded-full flex items-center justify-center ${option.bg} ${option.color}`}>
+                                            {option.icon ? <option.icon size={16} /> : <span className="text-xs font-bold">—</span>}
+                                        </div>
+                                        <span className={`text-sm font-medium ${isSelected ? 'text-primary' : 'text-gray-700'}`}>
+                                            {option.label}
+                                        </span>
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    </div>
 
                     {/* Cake Types */}
                     <div>

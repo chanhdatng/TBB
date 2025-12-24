@@ -43,6 +43,7 @@ const Orders = () => {
     const [advancedFilters, setAdvancedFilters] = useState({
         cakeTypes: [],
         status: [],
+        priority: [],
         minPrice: '',
         maxPrice: ''
     });
@@ -236,6 +237,14 @@ const Orders = () => {
             });
         }
 
+        // Priority filter
+        if (advancedFilters.priority && advancedFilters.priority.length > 0) {
+            result = result.filter(order => {
+                const orderPriority = order.originalData?.priority || 'normal';
+                return advancedFilters.priority.includes(orderPriority);
+            });
+        }
+
         if (advancedFilters.cakeTypes.length > 0) {
             result = result.filter(order =>
                 order.items.some(item => advancedFilters.cakeTypes.includes(item.name))
@@ -333,7 +342,7 @@ const Orders = () => {
                     >
                         <Filter size={20} />
                         Filter
-                        {(advancedFilters.status.length > 0 || advancedFilters.cakeTypes.length > 0 || advancedFilters.minPrice || advancedFilters.maxPrice) && (
+                        {(advancedFilters.status.length > 0 || advancedFilters.priority?.length > 0 || advancedFilters.cakeTypes.length > 0 || advancedFilters.minPrice || advancedFilters.maxPrice) && (
                             <span className="w-2 h-2 rounded-full bg-primary"></span>
                         )}
                     </button>

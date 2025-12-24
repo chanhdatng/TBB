@@ -21,6 +21,7 @@ Thêm trường priority (3 mức độ) cho đơn hàng, cập nhật form tạ
 | # | Phase | Status | Effort | Completed | Link |
 |---|-------|--------|--------|-----------|------|
 | 1 | Add Priority to Orders | ✅ Complete | 1.5h | 2025-12-25 02:44 | [phase-01](./phase-01-add-priority-field.md) |
+| 2 | Priority Filter | ✅ Complete | 0.5h | 2025-12-25 03:09 | - |
 
 ## Priority Levels
 
@@ -46,6 +47,7 @@ Thêm trường priority (3 mức độ) cho đơn hàng, cập nhật form tạ
 - ✅ Priority displayed in orders table (red badge for 'high')
 - ✅ Sorting: TimeSlot → Priority → CreatedTime
 - ✅ Existing orders treated as `normal` priority
+- ✅ Priority filter in AdvancedFilterModal (Phase 02)
 
 ## Implementation Review
 
@@ -78,6 +80,12 @@ All planned features for Phase 01 have been implemented, tested, code reviewed, 
 1. ⏭️ Manual QA testing on dev environment
 2. ⏭️ Deploy to production after QA approval
 3. 📋 Monitor user adoption and gather feedback
-4. 📋 Phase 02: Add priority filter (future enhancement)
-   - Planned: Advanced filter for priority levels
-   - Effort: 0.5h estimated
+
+## Phase 02 Completion
+
+**Completed**: 2025-12-25 03:09 UTC
+
+Phase 02 added priority filter to AdvancedFilterModal:
+- Multi-select priority filter (Tất cả, Gấp, Bình thường, Thấp)
+- Filter logic with 'normal' fallback for existing orders
+- Filter badge indicator updated
