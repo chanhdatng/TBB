@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Search, Filter, Plus, MoreHorizontal, ArrowUpDown, ArrowUp, ArrowDown, CheckCircle, CheckCircle2, Clock, XCircle, Trash2, Edit2, User, CakeSlice, Layers, StickyNote } from 'lucide-react';
+import { Search, Filter, Plus, MoreHorizontal, ArrowUpDown, ArrowUp, ArrowDown, CheckCircle, CheckCircle2, Clock, XCircle, Trash2, Edit2, User, CakeSlice, Layers, StickyNote, AlertCircle } from 'lucide-react';
 import CreateOrderModal from '../components/Orders/CreateOrderModal';
 import DateSelector from '../components/Orders/DateSelector';
 import AdvancedFilterModal from '../components/Orders/AdvancedFilterModal';
@@ -251,10 +251,39 @@ const Orders = () => {
         }
 
         // 4. Sorting
+        // Helper to extract start hour from time slot string (e.g., "16:00 - 18:00" → 16)
+        const getTimeSlotStartHour = (slot) => {
+            if (!slot) return 99; // No slot = sort last
+            const match = slot.match(/(\d{1,2}):00/);
+            return match ? parseInt(match[1], 10) : 99;
+        };
+
+        // Helper to get priority sort order (high=1, normal=2, low=3)
+        const getPriorityOrder = (priority) => {
+            if (priority === 'high') return 1;
+            if (priority === 'low') return 3;
+            return 2; // normal or undefined
+        };
+
         result.sort((a, b) => {
             let comparison = 0;
             if (sortConfig.key === 'receiveDate') {
-                comparison = a.timeline.received.raw - b.timeline.received.raw;
+                // Primary sort: by delivery time slot
+                const slotA = a.deliveryTimeSlot || a.originalData?.deliveryTimeSlot;
+                const slotB = b.deliveryTimeSlot || b.originalData?.deliveryTimeSlot;
+                comparison = getTimeSlotStartHour(slotA) - getTimeSlotStartHour(slotB);
+
+                // Secondary sort: by priority (high → normal → low)
+                if (comparison === 0) {
+                    const prioA = a.originalData?.priority || 'normal';
+                    const prioB = b.originalData?.priority || 'normal';
+                    comparison = getPriorityOrder(prioA) - getPriorityOrder(prioB);
+                }
+
+                // Tertiary sort: by received time within same slot and priority
+                if (comparison === 0) {
+                    comparison = a.timeline.received.raw - b.timeline.received.raw;
+                }
             } else if (sortConfig.key === 'customerName') {
                 comparison = a.customer.name.localeCompare(b.customer.name);
             }
@@ -494,10 +523,17 @@ const Orders = () => {
                                                 </div>
                                                 <div className="min-w-0">
                                                     <div
-                                                        className="text-sm font-bold text-gray-900 break-words max-w-[150px]"
+                                                        className="text-sm font-bold text-gray-900 break-words max-w-[150px] flex items-center gap-1.5"
                                                         title={order.customer.name}
                                                     >
                                                         <HighlightText text={order.customer.name} highlight={searchQuery} />
+                                                        {/* Priority indicator */}
+                                                        {(order.originalData?.priority === 'high') && (
+                                                            <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-red-100 text-red-700 flex-shrink-0">
+                                                                <AlertCircle size={10} />
+                                                                Gấp
+                                                            </span>
+                                                        )}
                                                     </div>
                                                     <div
                                                         className="text-xs text-gray-500 truncate"

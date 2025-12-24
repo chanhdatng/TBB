@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Plus, Trash2, AlertCircle, User, ShoppingBag, Receipt, MapPin, Phone, Save, Globe, Loader2, ChevronDown } from 'lucide-react';
+import { X, Plus, Trash2, AlertCircle, User, ShoppingBag, Receipt, MapPin, Phone, Save, Globe, Loader2, ChevronDown, ArrowDown } from 'lucide-react';
 import { useData } from '../../contexts/DataContext';
 import { scaleVariants, backdropVariants, shakeVariants } from '../../utils/animations';
 
@@ -35,6 +35,9 @@ const CreateOrderModal = ({ isOpen, onClose, onCreateOrder, editingOrder, onUpda
     const [orderDate, setOrderDate] = useState(new Date().toLocaleDateString('en-CA'));
     const [orderTime, setOrderTime] = useState(new Date().toTimeString().slice(0, 5));
     const [deliveryTimeSlot, setDeliveryTimeSlot] = useState('');
+
+    // Priority State
+    const [priority, setPriority] = useState('normal');
 
     const TIME_SLOTS = [
         "10:00 - 12:00",
@@ -168,6 +171,9 @@ const CreateOrderModal = ({ isOpen, onClose, onCreateOrder, editingOrder, onUpda
                     setDeliveryTimeSlot('');
                 }
 
+                // Set priority (default to 'normal' for backward compatibility)
+                setPriority(editingOrder.originalData?.priority || 'normal');
+
             } else if (initialData) {
                 // Restore from Draft
                 setCustomer(initialData.customer);
@@ -175,6 +181,7 @@ const CreateOrderModal = ({ isOpen, onClose, onCreateOrder, editingOrder, onUpda
                 setFees(initialData.fees);
                 setOrderDate(initialData.orderDate);
                 setDeliveryTimeSlot(initialData.deliveryTimeSlot);
+                setPriority(initialData.priority || 'normal');
             } else {
                 // Reset to initial state
                 setCustomer(initialCustomer);
@@ -185,6 +192,8 @@ const CreateOrderModal = ({ isOpen, onClose, onCreateOrder, editingOrder, onUpda
                 setOrderTime(new Date().toTimeString().slice(0, 5));
                 // Auto-select time slot based on current time
                 setDeliveryTimeSlot(getAutoSelectedTimeSlot());
+                // Reset priority to default
+                setPriority('normal');
             }
             setShowConfirm(false);
         }
@@ -254,7 +263,8 @@ const CreateOrderModal = ({ isOpen, onClose, onCreateOrder, editingOrder, onUpda
             items,
             fees,
             orderDate,
-            deliveryTimeSlot
+            deliveryTimeSlot,
+            priority
         };
 
         // Get existing drafts
@@ -474,6 +484,7 @@ const CreateOrderModal = ({ isOpen, onClose, onCreateOrder, editingOrder, onUpda
             discount: Number(fees.discount),
             orderDate: toCFAbsoluteTime(selectedDateTime), // Use selected date/time
             deliveryTimeSlot: deliveryTimeSlot, // Save the slot string
+            priority: priority, // Priority level: 'high', 'normal', 'low'
             otherFee: Number(fees.other),
             orderNote: orderNote, // Order-specific note
             payMethod: "Bank", // Default value
@@ -895,6 +906,36 @@ const CreateOrderModal = ({ isOpen, onClose, onCreateOrder, editingOrder, onUpda
                                                             }`}
                                                     >
                                                         {slot}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        </div>
+                                        {/* Priority Selector */}
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                                                Mức độ ưu tiên
+                                            </label>
+                                            <div className="flex gap-2">
+                                                {[
+                                                    { value: 'high', label: 'Gấp', color: 'red' },
+                                                    { value: 'normal', label: 'Bình thường', color: 'gray' },
+                                                    { value: 'low', label: 'Thấp', color: 'gray' }
+                                                ].map(p => (
+                                                    <button
+                                                        key={p.value}
+                                                        type="button"
+                                                        onClick={() => setPriority(p.value)}
+                                                        className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-all flex items-center gap-1 ${
+                                                            priority === p.value
+                                                                ? p.value === 'high'
+                                                                    ? 'bg-red-100 border-red-300 text-red-700'
+                                                                    : 'bg-primary/10 border-primary/30 text-primary'
+                                                                : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
+                                                        }`}
+                                                    >
+                                                        {p.value === 'high' && <AlertCircle size={12} />}
+                                                        {p.value === 'low' && <ArrowDown size={12} />}
+                                                        {p.label}
                                                     </button>
                                                 ))}
                                             </div>

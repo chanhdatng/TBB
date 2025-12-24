@@ -4,11 +4,11 @@
 
 This document provides a comprehensive summary of The Butter Bake codebase, including directory structure, key modules, component architecture, data flow patterns, and external dependencies.
 
-**Last Updated**: 2025-12-07
-**Total Files**: 156 source files (Phase 5 additions)
+**Last Updated**: 2025-12-25
+**Total Files**: 165+ source files (includes Recipe & Storage feature)
 **Total Lines**: ~20M characters (including data files)
 **Primary Language**: JavaScript (React/JSX)
-**Latest Phase**: Phase 5 - Tabbed Interface ✅ COMPLETED
+**Latest Features**: Order Priority System (Phase 01) ✅ COMPLETED, Recipe & Storage Management ✅ COMPLETED
 
 ---
 
@@ -190,9 +190,16 @@ Page-level components mapped to routes.
 - Advanced filtering (date range, status, customer search)
 - Order status management
 - Real-time order updates
+- **Priority-based sorting** (Phase 01): Orders sorted by priority badge (High → Normal → Low)
+- **Priority badge display**: Red badge "Gấp" for high-priority orders on customer name
+
+**Sorting Logic** (Priority Phase 01):
+- Primary: Delivery time slot (10:00, 12:00, 14:00, 16:00, 18:00)
+- Secondary: Order priority (high=1, normal=2, low=3)
+- Tertiary: Received time within same slot/priority
 
 **Components Used**:
-- `CreateOrderModal` - Order creation form
+- `CreateOrderModal` - Order creation form with priority selector
 - `OrderDetailsModal` - Order details view
 - `InvoiceModal` - Invoice generation
 - `AdvancedFilterModal` - Filter options
@@ -393,6 +400,11 @@ Modular, reusable React components.
 - Price calculation (subtotal, fees, discounts)
 - Delivery date/time selection
 - Form validation
+- **Order Priority selector** (Phase 01): 3-level priority with Vietnamese labels
+  - High (Gấp): Red badge with alert icon
+  - Normal (Bình thường): Gray badge (default)
+  - Low (Thấp): Gray badge with down arrow
+- Draft saving/loading with priority state persistence
 
 **`OrderDetailsModal.jsx`**
 - Order information display
@@ -516,6 +528,61 @@ Modular, reusable React components.
 **`ConfirmSyncModal.jsx`**
 - Confirmation dialog for sync operations
 - Preview changes before commit
+
+#### Products Components (`/src/components/Products/ProductTabs`)
+
+**`RecipeTab.jsx`**
+- Main recipe management container
+- Fetches recipe data from Firebase on tab open
+- Manages view/edit mode state
+- Admin-only edit permissions
+
+**`RecipeView.jsx`**
+- Read-only recipe display
+- Ingredient list with linked/freetext indicators (🔗 = inventory linked, T = free text)
+- Baking parameters (temperature °C, time minutes) in colored cards
+- Notes in yellow callout
+- Empty state with "Add Recipe" button (admin only)
+
+**`RecipeEdit.jsx`**
+- Recipe editing interface
+- Ingredient autocomplete with inventory linking
+- Support for free-text ingredients (no inventory link)
+- Editable quantity fields
+- Number inputs for baking temp (0-500°C) and time (0-999 min)
+- Notes textarea (max 500 chars with counter)
+- Real-time validation via `validateRecipe()`
+- Updates `recipeUpdatedAt` and `recipeUpdatedBy` on save
+
+**`StorageTab.jsx`**
+- Main storage instructions container
+- Fetches `storageInstructions` from Firebase
+- Manages view/edit mode state
+- Admin-only edit permissions
+
+**`StorageView.jsx`**
+- Read-only storage display
+- Whitespace-preserving text display
+- Empty state with "Add Storage" button (admin only)
+- Edit button for admins
+
+**`StorageEdit.jsx`**
+- Storage editing interface
+- Textarea for instructions (max 1000 chars)
+- Real-time character counter
+- Validation via `validateStorage()`
+
+**`IngredientAutocomplete.jsx`**
+- Autocomplete input for ingredient selection
+- Debounced search (300ms delay)
+- Searches inventory by name using `searchIngredients()`
+- Shows linked ingredients with current stock info
+- Free-text option for non-inventory ingredients
+- Click-outside-to-close behavior
+
+**`AnalyticsTab.jsx`**
+- Product analytics display
+- Sales metrics and performance data
 
 #### Layout Components (`/src/components/Layout`)
 
@@ -685,6 +752,55 @@ Quality: Ultra high quality, appetizing
 **Functions**:
 - Copy text to clipboard
 - Success/error notifications
+
+#### `/src/utils/recipeHelpers.js` (153 lines)
+**Purpose**: Recipe validation and ingredient management utilities
+
+**Exported Functions**:
+
+**Validation**:
+- `validateRecipe(recipe)` → { valid: boolean, errors: Object }
+  - Validates ingredients array (name/quantity required, max lengths)
+  - Validates bakingTemp (0-500°C), bakingTime (0-999 min)
+  - Validates notes (max 500 chars)
+
+**Ingredient Parsing**:
+- `parseIngredientUnit(quantity)` → { amount: number|null, unit: string }
+  - Extracts numeric amount and unit from strings ("500g" → {amount: 500, unit: "g"})
+
+**Ingredient Search**:
+- `searchIngredients(ingredients, query, limit=10)` → Array
+  - Searches ingredient list by name (case-insensitive)
+  - Returns limited results for autocomplete
+
+**Ingredient Creation**:
+- `createIngredientFromLink(ingredient)` → Recipe ingredient object
+  - Creates recipe ingredient linked to inventory (includes ingredientId)
+- `createIngredientFromText(name)` → Recipe ingredient object
+  - Creates free-text ingredient (no inventory link)
+
+**Recipe Template**:
+- `createEmptyRecipe()` → Empty recipe object
+- `hasRecipeData(recipe)` → boolean
+  - Checks if recipe contains any data
+
+#### `/src/utils/storageHelpers.js` (72 lines)
+**Purpose**: Storage instructions validation utilities
+
+**Exported Functions**:
+
+**Validation**:
+- `validateStorage(instructions)` → { valid: boolean, errors?: Object }
+  - Validates string type and max 1000 chars
+
+**Text Processing**:
+- `sanitizeStorageText(text)` → string (trimmed)
+- `getStoragePreview(instructions, maxLength=100)` → string (truncated with "...")
+- `getStorageCharCount(instructions)` → number
+- `isValidStorageLength(instructions)` → boolean
+
+**Data Checking**:
+- `hasStorageData(instructions)` → boolean
 
 ---
 
@@ -1046,7 +1162,8 @@ generateCakeImage(cakeName, description)
     "shipFee": 20000,
     "otherFee": 5000,
     "discount": 10,                // Percentage or fixed amount
-    "note": "Customer note"
+    "note": "Customer note",
+    "priority": "high"             // Phase 01: 'high' (Gấp) | 'normal' (Bình thường) | 'low' (Thấp)
   }
 }
 ```
@@ -1104,6 +1221,92 @@ generateCakeImage(cakeName, description)
   }
 }
 ```
+
+---
+
+## Key Features & Implementations
+
+### Order Priority System (Phase 01)
+
+**Overview**: 3-level priority system for order management with visual indicators and intelligent sorting.
+
+**Priority Levels**:
+- **High (Gấp)**: Urgent/rush orders (red visual indicator)
+- **Normal (Bình thường)**: Standard orders (default, gray visual indicator)
+- **Low (Thấp)**: Non-urgent orders (gray visual indicator)
+
+**Implementation Details**:
+
+**Frontend State** (`/src/components/Orders/CreateOrderModal.jsx`):
+```javascript
+const [priority, setPriority] = useState('normal'); // default priority
+
+// Priority selector UI (lines 920-940)
+const PRIORITY_OPTIONS = [
+  { value: 'high', label: 'Gấp', color: 'red' },
+  { value: 'normal', label: 'Bình thường', color: 'gray' },
+  { value: 'low', label: 'Thấp', color: 'gray' }
+];
+
+// Included in order data when creating/updating
+const orderData = {
+  ...otherFields,
+  priority: priority // 'high' | 'normal' | 'low'
+};
+```
+
+**Priority Badge Display** (`/src/pages/Orders.jsx`, lines 531-536):
+- High-priority orders display red badge "Gấp" next to customer name
+- Badge includes AlertCircle icon (lucide-react)
+- Badge styling: `bg-red-100 text-red-700`
+- Only visible for high-priority orders
+
+**Sorting Algorithm** (`/src/pages/Orders.jsx`, lines 261-291):
+```javascript
+// Helper function to get priority sort order
+const getPriorityOrder = (priority) => {
+  if (priority === 'high') return 1;      // Sort first
+  if (priority === 'low') return 3;       // Sort last
+  return 2;                                // Normal in middle
+};
+
+// Multi-level sorting:
+// 1. Primary: Delivery time slot (10:00→12:00→14:00→16:00→18:00)
+// 2. Secondary: Priority (high→normal→low)
+// 3. Tertiary: Received time within same slot/priority
+```
+
+**Draft Persistence** (`/src/components/Orders/CreateOrderModal.jsx`, lines 258-284):
+```javascript
+const draftData = {
+  id: Date.now(),
+  savedAt: new Date().toISOString(),
+  customer,
+  items,
+  fees,
+  orderDate,
+  deliveryTimeSlot,
+  priority // Saved with draft
+};
+```
+
+**Data Flow**:
+1. User selects priority when creating/editing order
+2. Priority stored in Firebase (`orders/{orderId}/priority`)
+3. Orders.jsx fetches and sorts by priority
+4. Badge displays for high-priority orders
+5. Drafts include priority for quick restoration
+
+**Visual Indicators**:
+- High: Red background (bg-red-100), AlertCircle icon
+- Normal: Gray background, no special icon (default)
+- Low: Gray background, ArrowDown icon
+- Buttons are toggle-able, show selection state
+
+**Backward Compatibility**:
+- Default priority is 'normal' if not specified
+- Existing orders without priority field default to 'normal'
+- Graceful handling in sorting logic
 
 ---
 
